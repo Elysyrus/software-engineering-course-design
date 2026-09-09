@@ -13,3 +13,5 @@ Thumbs.db
 .venv/
 __pycache__/
 .pytest_cache/
+*.db
+tmp/
