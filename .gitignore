@@ -1,0 +1,15 @@
+# Local secrets
+.env
+.env.*
+!.env.example
+
+# Temporary files
+~$*
+*.tmp
+.DS_Store
+Thumbs.db
+
+# Python local environment and caches
+.venv/
+__pycache__/
+.pytest_cache/
