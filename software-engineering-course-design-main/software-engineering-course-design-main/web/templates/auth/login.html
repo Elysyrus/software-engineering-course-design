@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}系统登录{% endblock %}
+{% block content %}
+<div style="max-width: 400px; margin: 4rem auto;">
+  <div class="card">
+    <h2 style="margin-bottom: 0.5rem; text-align: center;">系统登录</h2>
+    <p style="color: var(--text-muted); font-size: 0.85rem; text-align: center; margin-bottom: 1.5rem;">支持学生、教师与教务三种角色账号</p>
+    <form id="login-form">
+      <div class="form-group">
+        <label class="form-label" for="username">学号 / 工号</label>
+        <input type="text" id="username" class="form-input" required placeholder="请输入登录账号">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="password">密码</label>
+        <input type="password" id="password" class="form-input" required placeholder="初始密码为证件后六位或默认密码">
+      </div>
+      <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 0.5rem;" id="login-btn">立即登录</button>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById("login-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById("login-btn");
+  btn.disabled = true;
+  btn.innerText = "登录中...";
+  try {
+    const res = await SECD.request("/api/v1/auth/login", {
+      method: "POST",
+      body: JSON.stringify({
+        username: document.getElementById("username").value.trim(),
+        password: document.getElementById("password").value
+      })
+    });
+    localStorage.setItem("token", res.access_token);
+    localStorage.setItem("role", res.role);
+
+    if (res.is_first_login) {
+      SECD.showToast("首次登录，需修改初始密码", "warning");
+      setTimeout(() => window.location.href = "/change-password?first=true", 800);
+      return;
+    }
+    SECD.showToast("登录成功", "success");
+    const redirectMap = { student: "/student/courses", teacher: "/teacher/claim", admin: "/admin/users" };
+    setTimeout(() => window.location.href = redirectMap[res.role] || "/", 600);
+  } catch (err) {
+    // 错误信息已由 app.js 统一 Toast 提示
+  } finally {
+    btn.disabled = false;
+    btn.innerText = "立即登录";
+  }
+});
+</script>
+{% endblock %}

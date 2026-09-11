@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% set active_nav = 'grades' %}
+{% block title %}我的成绩单{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">修读课程成绩与学分汇总</h1>
+  <div id="gpa-summary" style="font-weight: 600; color: var(--primary);"></div>
+</div>
+
+<div class="card">
+  <div class="table-responsive">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>学期</th>
+          <th>课程代码</th>
+          <th>课程名称</th>
+          <th>获得学分</th>
+          <th>期末成绩 (百分制)</th>
+          <th>绩点 (GPA)</th>
+          <th>评定状态</th>
+        </tr>
+      </thead>
+      <tbody id="grades-body">
+        <tr><td colspan="7" class="empty-state">拉取成绩数据中...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadGrades() {
+  try {
+    const res = await SECD.request("/api/v1/student/grades");
+    const tbody = document.getElementById("grades-body");
+    const summary = document.getElementById("gpa-summary");
+
+    if (res.total_credits !== undefined) {
+      summary.innerText = `总修读学分: ${res.total_credits} | 平均绩点 GPA: ${res.gpa}`;
+    }
+    const list = res.items || [];
+    if (list.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="7" class="empty-state">暂无已登记录入的成绩。</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = list.map(g => `
+      <tr>
+        <td>${g.semester}</td>
+        <td><strong>${g.course_code}</strong></td>
+        <td>${g.course_name}</td>
+        <td>${g.credits}</td>
+        <td><strong>${g.score !== null ? g.score : '暂未公布'}</strong></td>
+        <td>${g.gpa_point !== null ? g.gpa_point : '-'}</td>
+        <td>
+          <span class="role-badge ${g.is_passed ? 'role-student' : 'role-teacher'}">
+            ${g.is_passed ? '通过' : (g.score === null ? '评卷中' : '未通过')}
+          </span>
+        </td>
+      </tr>
+    `).join("");
+  } catch (err) {
+    document.getElementById("grades-body").innerHTML = `<tr><td colspan="7" class="empty-state">获取成绩清单失败</td></tr>`;
+  }
+}
+document.addEventListener("DOMContentLoaded", loadGrades);
+</script>
+{% endblock %}

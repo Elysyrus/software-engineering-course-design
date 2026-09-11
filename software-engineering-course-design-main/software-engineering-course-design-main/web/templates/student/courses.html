@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% set active_nav = 'courses' %}
+{% block title %}课程目录浏览{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">可选课程目录与班次余量</h1>
+  <div style="display:flex; gap:0.5rem; align-items:center;">
+    <span style="font-size:0.85rem; color:var(--text-muted);" id="poll-indicator">● 余量实时刷新中</span>
+    <button class="btn btn-outline btn-sm" onclick="loadCatalog()">手动刷新</button>
+  </div>
+</div>
+
+<div class="card">
+  <div class="table-responsive">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>课程编号</th>
+          <th>课程名称</th>
+          <th>学分</th>
+          <th>授课教师</th>
+          <th>上课时间 / 地点</th>
+          <th>已选 / 容量 (余量)</th>
+          <th>状态</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody id="course-list-body">
+        <tr><td colspan="8" class="empty-state">加载课程数据中...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let lastCatalogData = [];
+
+async function loadCatalog() {
+  try {
+    const data = await SECD.request("/api/v1/student/available-sections");
+    lastCatalogData = data;
+    renderCatalog(data);
+  } catch (err) {
+    document.getElementById("course-list-body").innerHTML = `<tr><td colspan="8" class="empty-state" style="color:var(--danger)">获取课程目录失败：${err.message}</td></tr>`;
+  }
+}
+
+function renderCatalog(sections) {
+  const tbody = document.getElementById("course-list-body");
+  if (!sections || sections.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="8" class="empty-state">当前选课阶段暂无开放班次</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = sections.map(s => {
+    const remaining = s.capacity - s.enrolled_count;
+    const isFull = remaining <= 0;
+    return `
+      <tr>
+        <td><strong>${s.course_code}</strong></td>
+        <td>${s.course_name}</td>
+        <td>${s.credits}</td>
+        <td>${s.teacher_name || '待定'}</td>
+        <td>${s.schedule_time} (${s.classroom})</td>
+        <td>
+          <span style="font-weight:600; color:${isFull ? 'var(--danger)' : 'var(--success)'}">
+            ${s.enrolled_count} / ${s.capacity} (余量: ${Math.max(0, remaining)})
+          </span>
+        </td>
+        <td>
+          <span class="role-badge ${isFull ? 'role-teacher' : 'role-student'}">${isFull ? '名额已满' : '可选'}</span>
+        </td>
+        <td>
+          <button class="btn btn-sm btn-primary" onclick="addToDraft(${s.id})" ${isFull ? 'disabled title="名额已满，无法加入草稿"' : ''}>
+            加入草稿
+          </button>
+        </td>
+      </tr>
+    `;
+  }).join("");
+}
+
+async function addToDraft(sectionId) {
+  try {
+    await SECD.request("/api/v1/student/draft/items", {
+      method: "POST",
+      body: JSON.stringify({ section_id: sectionId })
+    });
+    SECD.showToast("已成功加入选课草稿箱");
+  } catch (err) {}
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  SECD.startPolling(loadCatalog, 5000);
+});
+</script>
+{% endblock %}

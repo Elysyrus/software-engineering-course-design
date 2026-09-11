@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% set active_nav = 'close' %}
+{% block title %}关闭选课确认控制台{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">选课阶段关闭与系统决算控制台</h1>
+</div>
+
+<div class="card" style="border-left: 4px solid var(--danger);">
+  <h3 style="color: var(--danger); margin-bottom: 0.5rem;">高危操作警示</h3>
+  <p style="font-size: 0.92rem; color: var(--text-main); margin-bottom: 0.75rem;">
+    点击“关闭选课”后，系统将执行以下核心逻辑：
+  </p>
+  <ul style="margin-left: 1.5rem; font-size: 0.88rem; color: var(--text-muted); line-height: 1.6;">
+    <li>锁定所有学生选课权限，禁止继续修改、添加或删除选课草稿；</li>
+    <li>触发后台抽签分配与成班校验算法（不足 3 人未成班的班次将自动停开）；</li>
+    <li>为选课成功的学生生成账单，并通过后台服务异步推送账单状态至财务结算中心。</li>
+  </ul>
+</div>
+
+<div class="card">
+  <div class="form-group" style="margin-bottom: 1.5rem;">
+    <label class="form-label" style="font-weight: 600;">当前选课学期与轮次：</label>
+    <div style="font-size: 1.1rem; font-weight: 700; color: var(--primary);" id="semester-info">2026 年秋季学期 - 第 1 阶段正选</div>
+  </div>
+
+  <div class="form-group">
+    <label class="form-label" for="confirm-phrase">
+      请在下方输入确认口令 <code style="background:#f1f5f9; padding:2px 6px; border-radius:4px; color:var(--danger)">CLOSE-CONFIRM</code>：
+    </label>
+    <input type="text" id="confirm-phrase" class="form-input" style="max-width: 320px;" placeholder="输入确认口令后方可点击关闭">
+  </div>
+
+  <div style="margin-top: 1.5rem;">
+    <button id="close-reg-btn" class="btn btn-danger" onclick="executeCloseRegistration()" disabled>
+      正式关闭本轮选课并触发结算
+    </button>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const input = document.getElementById("confirm-phrase");
+const btn = document.getElementById("close-reg-btn");
+
+input.addEventListener("input", () => {
+  btn.disabled = (input.value.trim() !== "CLOSE-CONFIRM");
+});
+
+async function executeCloseRegistration() {
+  const confirmed = await SECD.confirmAction("【二次确认】确定立即终止选课吗？此动作不可逆！");
+  if (!confirmed) return;
+
+  btn.disabled = true;
+  btn.innerText = "正在执行关闭结算算法与生成账单...";
+
+  try {
+    const res = await SECD.request("/api/v1/admin/registration/close", {
+      method: "POST",
+      body: JSON.stringify({ confirmation: "CLOSE-CONFIRM" })
+    });
+    SECD.showToast("选课已成功关闭，结算与账单发送任务已启动！", "success");
+    setTimeout(() => window.location.href = "/admin/closing-status", 1200);
+  } catch (err) {
+    btn.disabled = false;
+    btn.innerText = "正式关闭本轮选课并触发结算";
+  }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% set active_nav = 'grades' %}
+{% block title %}期末成绩录入{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">期末学生成绩登记与提交</h1>
+  <div style="display:flex; gap:0.5rem; align-items:center;">
+    <select id="grade-section-selector" class="form-select" style="width: auto;" onchange="loadStudentsForGrading(this.value)">
+      <option value="">-- 选择班次录入成绩 --</option>
+    </select>
+    <button class="btn btn-primary" onclick="submitGrades()">保存并提交成绩</button>
+  </div>
+</div>
+
+<div class="card">
+  <div class="table-responsive">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>学号</th>
+          <th>姓名</th>
+          <th style="width: 180px;">成绩 (0 ~ 100)</th>
+          <th>当前状态</th>
+          <th>最后更新人 / 时间</th>
+        </tr>
+      </thead>
+      <tbody id="grade-entry-body">
+        <tr><td colspan="5" class="empty-state">请选择需要进行成绩录入的教学班次。</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentGradingStudents = [];
+let activeSectionId = null;
+
+async function loadGradingSections() {
+  try {
+    const sections = await SECD.request("/api/v1/teacher/my-sections");
+    const sel = document.getElementById("grade-section-selector");
+    sel.innerHTML = `<option value="">-- 选择班次录入成绩 --</option>` + sections.map(s => `
+      <option value="${s.id}">#${s.id} -${s.course_name}</option>
+    `).join("");
+    if (sections.length > 0) {
+      sel.value = sections[0].id;
+      loadStudentsForGrading(sections[0].id);
+    }
+  } catch (err) {}
+}
+
+async function loadStudentsForGrading(sectionId) {
+  if (!sectionId) return;
+  activeSectionId = sectionId;
+  try {
+    const data = await SECD.request(`/api/v1/teacher/sections/${sectionId}/grades`);
+    currentGradingStudents = data || [];
+    const tbody = document.getElementById("grade-entry-body");
+    if (currentGradingStudents.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="5" class="empty-state">该班级下无学生名单</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = currentGradingStudents.map((s, idx) => `
+      <tr>
+        <td><strong>${s.student_number}</strong></td>
+        <td>${s.full_name}</td>
+        <td>
+          <input type="number" min="0" max="100" step="0.5" class="form-input score-input"
+                 data-student-id="${s.student_id}" value="${s.score !== null ? s.score : ''}"
+                 placeholder="输入 0-100" style="padding: 0.35rem 0.5rem;">
+        </td>
+        <td>
+          <span class="role-badge ${s.score !== null ? 'role-student' : 'role-teacher'}">
+            ${s.score !== null ? '已打分' : '未评定'}
+          </span>
+        </td>
+        <td>${s.updated_at || '未提交'}</td>
+      </tr>
+    `).join("");
+  } catch (err) {
+    document.getElementById("grade-entry-body").innerHTML = `<tr><td colspan="5" class="empty-state">读取成绩失败</td></tr>`;
+  }
+}
+
+async function submitGrades() {
+  if (!activeSectionId) {
+    SECD.showToast("请先选择对应的教学班次", "warning");
+    return;
+  }
+  const inputs = document.querySelectorAll(".score-input");
+  const gradesPayload = [];
+  for (let input of inputs) {
+    const val = input.value.trim();
+    if (val !== "") {
+      const num = parseFloat(val);
+      if (isNaN(num) || num < 0 || num > 100) {
+        SECD.showToast("成绩必须为 0 到 100 之间的有效数字", "danger");
+        input.focus();
+        return;
+      }
+      gradesPayload.push({
+        student_id: parseInt(input.dataset.studentId),
+        score: num
+      });
+    }
+  }
+
+  if (gradesPayload.length === 0) {
+    SECD.showToast("请至少录入一位学生的有效成绩", "warning");
+    return;
+  }
+
+  const ok = await SECD.confirmAction(`本次共提交 ${gradesPayload.length} 条成绩数据，确认保存？`);
+  if (!ok) return;
+
+  try {
+    await SECD.request(`/api/v1/teacher/sections/${activeSectionId}/grades`, {
+      method: "POST",
+      body: JSON.stringify({ grades: gradesPayload })
+    });
+    SECD.showToast("成绩录入提交成功！");
+    loadStudentsForGrading(activeSectionId);
+  } catch (err) {}
+}
+
+document.addEventListener("DOMContentLoaded", loadGradingSections);
+</script>
+{% endblock %}
