@@ -124,3 +124,15 @@ def close(
         billing_jobs_created=jobs,
         message="选课已关闭",
     )
+
+
+# 成员 2 前端模块挂载
+from pathlib import Path
+from fastapi.staticfiles import StaticFiles
+from web.web_routes import web_router
+
+# 1. 挂载静态文件目录
+app.mount("/static", StaticFiles(directory=Path(__file__).resolve().parent.parent / "web" / "static"), name="static")
+
+# 2. 引入前端页面路由
+app.include_router(web_router)
