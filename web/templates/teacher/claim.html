@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% set active_nav = 'claim' %}
+{% block title %}教师教学任务认领{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">教学任务认领与授课申请</h1>
+  <button class="btn btn-outline btn-sm" onclick="loadClaimSections()">刷新班次</button>
+</div>
+
+<div class="card">
+  <div class="table-responsive">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>班次号</th>
+          <th>课程编号与名称</th>
+          <th>学分</th>
+          <th>计划容量</th>
+          <th>上课时段与教室</th>
+          <th>认领状态</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody id="claim-body">
+        <tr><td colspan="7" class="empty-state">正在查询可认领班次...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadClaimSections() {
+  try {
+    const data = await SECD.request("/api/v1/teacher/claimable-sections");
+    const tbody = document.getElementById("claim-body");
+    if (!data || data.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="7" class="empty-state">暂无可认领的教学班次。</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = data.map(sec => `
+      <tr>
+        <td>#${sec.id}</td>
+        <td><strong>${sec.course_code}</strong> -${sec.course_name}</td>
+        <td>${sec.credits}</td>
+        <td>${sec.capacity} 人</td>
+        <td>${sec.schedule_time} (${sec.classroom})</td>
+        <td>
+          <span class="role-badge ${sec.teacher_id ? 'role-student' : 'role-teacher'}">
+            ${sec.teacher_id ? (sec.is_mine ? '您已认领' : '已被他人认领') : '待认领'}
+          </span>
+        </td>
+        <td>
+          ${!sec.teacher_id ? `<button class="btn btn-sm btn-primary" onclick="claimSection(${sec.id})">认领该班</button>` : ''}
+          ${sec.is_mine ? `<button class="btn btn-sm btn-danger" onclick="unclaimSection(${sec.id})">取消认领</button>` : ''}
+        </td>
+      </tr>
+    `).join("");
+  } catch (err) {
+    document.getElementById("claim-body").innerHTML = `<tr><td colspan="7" class="empty-state">获取班次列表失败</td></tr>`;
+  }
+}
+
+async function claimSection(sectionId) {
+  const ok = await SECD.confirmAction("确认认领该门课程的授课任务？认领后将负责该班级的教学管理与期末成绩录入。");
+  if (!ok) return;
+  try {
+    await SECD.request(`/api/v1/teacher/sections/${sectionId}/claim`, { method: "POST" });
+    SECD.showToast("班次认领成功！");
+    loadClaimSections();
+  } catch (err) {}
+}
+
+async function unclaimSection(sectionId) {
+  const ok = await SECD.confirmAction("确认放弃认领该教学任务？");
+  if (!ok) return;
+  try {
+    await SECD.request(`/api/v1/teacher/sections/${sectionId}/unclaim`, { method: "POST" });
+    SECD.showToast("已释放班次认领");
+    loadClaimSections();
+  } catch (err) {}
+}
+
+document.addEventListener("DOMContentLoaded", loadClaimSections);
+</script>
+{% endblock %}

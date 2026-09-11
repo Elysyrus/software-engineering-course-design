@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% set active_nav = 'draft' %}
+{% block title %}草稿编辑与排序{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">选课草稿箱与主备选排序</h1>
+  <div>
+    <button class="btn btn-outline" onclick="loadDraft()">重置排序</button>
+    <button class="btn btn-primary" id="submit-registration-btn" onclick="submitRegistration()">提交正式选课</button>
+  </div>
+</div>
+
+<div class="card" style="border-left: 4px solid var(--primary);">
+  <p style="font-size: 0.9rem; color: var(--text-muted);">
+    规则说明：主选需设定 4 门课程，备选设定 2 门。系统在正式抽签结算时将严格按照排定的优先级顺序执行选课防冲突仲裁。
+  </p>
+</div>
+
+<div class="card">
+  <div class="table-responsive">
+    <table class="table" id="draft-table">
+      <thead>
+        <tr>
+          <th style="width: 80px;">优先级</th>
+          <th style="width: 110px;">选课类别</th>
+          <th>课程编号与名称</th>
+          <th>教师</th>
+          <th>上课时段</th>
+          <th style="width: 140px;">排序调整</th>
+          <th style="width: 90px;">操作</th>
+        </tr>
+      </thead>
+      <tbody id="draft-body">
+        <tr><td colspan="7" class="empty-state">正在拉取您的草稿数据...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let draftItems = [];
+let currentVersion = 1;
+
+async function loadDraft() {
+  try {
+    const res = await SECD.request("/api/v1/student/draft");
+    draftItems = res.items || [];
+    currentVersion = res.version || 1;
+    renderDraft();
+  } catch (err) {
+    document.getElementById("draft-body").innerHTML = `<tr><td colspan="7" class="empty-state">获取草稿失败</td></tr>`;
+  }
+}
+
+function renderDraft() {
+  const tbody = document.getElementById("draft-body");
+  if (draftItems.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7" class="empty-state">草稿箱空空如也，请前往“选课目录”添加课程班次。</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = draftItems.map((item, index) => {
+    const isPrimary = index < 4;
+    return `
+      <tr data-id="${item.section_id}">
+        <td><strong>#${index + 1}</strong></td>
+        <td>
+          <span class="role-badge ${isPrimary ? 'role-student' : 'role-teacher'}">
+            ${isPrimary ? '主选 Primary' : '备选 Alternate'}
+          </span>
+        </td>
+        <td><strong>${item.course_code}</strong> -${item.course_name}</td>
+        <td>${item.teacher_name}</td>
+        <td>${item.schedule_time}</td>
+        <td>
+          <button class="btn btn-sm btn-secondary" onclick="moveItem(${index}, -1)" ${index === 0 ? 'disabled' : ''}>↑</button>
+          <button class="btn btn-sm btn-secondary" onclick="moveItem(${index}, 1)" ${index === draftItems.length - 1 ? 'disabled' : ''}>↓</button>
+        </td>
+        <td>
+          <button class="btn btn-sm btn-danger" onclick="removeItem(${item.section_id})">移除</button>
+        </td>
+      </tr>
+    `;
+  }).join("");
+}
+
+function moveItem(index, direction) {
+  const target = index + direction;
+  if (target < 0 || target >= draftItems.length) return;
+  const temp = draftItems[index];
+  draftItems[index] = draftItems[target];
+  draftItems[target] = temp;
+  renderDraft();
+}
+
+async function removeItem(sectionId) {
+  const ok = await SECD.confirmAction("确定要从选课草稿箱中移除该班次吗？");
+  if (!ok) return;
+  try {
+    await SECD.request(`/api/v1/student/draft/items/${sectionId}`, { method: "DELETE" });
+    SECD.showToast("已成功移除");
+    loadDraft();
+  } catch (err) {}
+}
+
+async function submitRegistration() {
+  if (draftItems.length < 4) {
+    SECD.showToast("至少需选择 4 门主选课程方可提交正式选课", "warning");
+    return;
+  }
+  const confirmed = await SECD.confirmAction("提交后将作为本学期正式选课申请进入抽签结算系统，确认提交？");
+  if (!confirmed) return;
+
+  const btn = document.getElementById("submit-registration-btn");
+  btn.disabled = true;
+  try {
+    await SECD.request("/api/v1/student/registration/submit", {
+      method: "POST",
+      body: JSON.stringify({
+        version: currentVersion,
+        ordered_section_ids: draftItems.map(d => d.section_id)
+      })
+    });
+    SECD.showToast("正式选课提交成功！正在跳转至结果页...", "success");
+    setTimeout(() => window.location.href = "/student/results", 1000);
+  } catch (err) {
+    btn.disabled = false;
+  }
+}
+
+document.addEventListener("DOMContentLoaded", loadDraft);
+</script>
+{% endblock %}

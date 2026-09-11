@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}选课系统{% endblock %} - 高校教务管理平台</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <div id="toast-container" class="toast-container"></div>
+
+  <div id="confirm-modal" class="modal-backdrop">
+    <div class="modal">
+      <h3 style="margin-bottom: 0.75rem; font-size: 1.1rem;">操作确认</h3>
+      <p id="confirm-modal-msg" style="color: var(--text-muted); font-size: 0.95rem; margin-bottom: 1.25rem;">确定继续执行吗？</p>
+      <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
+        <button id="confirm-modal-cancel" class="btn btn-secondary">取消</button>
+        <button id="confirm-modal-ok" class="btn btn-danger">确认</button>
+      </div>
+    </div>
+  </div>
+
+  <nav class="navbar">
+    <a href="/" class="brand">选课管理系统 SECD</a>
+    <div class="user-meta" id="nav-user-meta">
+      {% if user %}
+        <span>{{ user.username }} ({{ user.full_name }})</span>
+        <span class="role-badge role-{{ user.role }}">{{ user.role }}</span>
+        <button class="btn btn-sm btn-outline" style="color:#fff; border-color:#475569;" onclick="logout()">退出</button>
+      {% endif %}
+    </div>
+  </nav>
+
+  <div class="layout-container">
+    {% if user %}
+    <aside class="sidebar">
+      {% if user.role == 'student' %}
+        <a href="/student/courses" class="nav-link {% if active_nav == 'courses' %}active{% endif %}">选课目录</a>
+        <a href="/student/draft" class="nav-link {% if active_nav == 'draft' %}active{% endif %}">选课草稿与排序</a>
+        <a href="/student/results" class="nav-link {% if active_nav == 'results' %}active{% endif %}">正式选课结果</a>
+        <a href="/student/grades" class="nav-link {% if active_nav == 'grades' %}active{% endif %}">成绩与学分</a>
+      {% elif user.role == 'teacher' %}
+        <a href="/teacher/claim" class="nav-link {% if active_nav == 'claim' %}active{% endif %}">班次认领</a>
+        <a href="/teacher/roster" class="nav-link {% if active_nav == 'roster' %}active{% endif %}">授课花名册</a>
+        <a href="/teacher/grades" class="nav-link {% if active_nav == 'grades' %}active{% endif %}">成绩录入</a>
+      {% elif user.role == 'admin' %}
+        <a href="/admin/users" class="nav-link {% if active_nav == 'users' %}active{% endif %}">师生人员管理</a>
+        <a href="/admin/close-registration" class="nav-link {% if active_nav == 'close' %}active{% endif %}">关闭选课控制台</a>
+        <a href="/admin/closing-status" class="nav-link {% if active_nav == 'status' %}active{% endif %}">结果与账单状态</a>
+      {% endif %}
+      <div style="margin-top: auto; padding-top: 1rem; border-top: 1px solid var(--border);">
+        <a href="/change-password" class="nav-link">修改密码</a>
+      </div>
+    </aside>
+    {% endif %}
+
+    <main class="main-content">
+      <div id="conflict-banner" class="banner-conflict">
+        <div>
+          <strong>版本冲突提示：</strong>检测到当前页面数据已被更新或处于旧版本状态。
+        </div>
+        <button class="btn btn-sm btn-danger" onclick="window.location.reload()">重新载入最新数据</button>
+      </div>
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+  <script>
+    function logout() {
+      localStorage.clear();
+      window.location.href = "/login";
+    }
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>
