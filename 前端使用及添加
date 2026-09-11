@@ -1,0 +1,41 @@
+cd software-engineering-course-design-main
+& "C:\Users\27988\AppData\Local\Microsoft\WindowsApps\python.exe" -m uvicorn app.main:app --reload --port 8000
+出现 Uvicorn running on [http://127.0.0.1:8000](http://127.0.0.1:8000) 时，服务就正式启动成功了
+点击终端右上角 + 号新建一个终端窗口，执行cd software-engineering-course-design-main
+& "C:\Users\27988\AppData\Local\Microsoft\WindowsApps\python.exe" mock_catalog/mock_catalog_service.py
+看到输出 Uvicorn running on [http://0.0.0.0:8081](http://0.0.0.0:8081) 即表示模拟服务已监听
+
+打开浏览器（8081 端口）
+
+打开网址：[http://127.0.0.1:8081/catalog/courses](http://127.0.0.1:8081/catalog/courses)
+
+页面会返回一段 JSON 数据（包含 CS101、CS202 等课程与班次信息），说明目录模拟服务正常提供数据。
+
+测试故障注入：打开 [http://127.0.0.1:8081/catalog/courses?fault=503](http://127.0.0.1:8081/catalog/courses?fault=503)，页面返回 503 错误，说明故障模拟生效。
+登录与改密流程（8000 端口）
+打开网址：[http://127.0.0.1:8000/login](http://127.0.0.1:8000/login)
+首次登录拦截：账号输入 2024001，密码输入弱密码 123456 点击登录，系统会自动跳转至首次改密页面 /change-password?first=true。
+
+密码校验：输入少于 8 位的新密码，右上角应弹出红色 Toast 拦截提示。
+学生端核心业务页面
+选课目录：访问 [http://127.0.0.1:8000/student/courses](http://127.0.0.1:8000/student/courses)，按 F12 打开控制台网络（Network），观察是否每隔 5 秒自动轮询余量；名额已满的班次其“加入草稿”按钮应处于置灰状态。
+
+草稿排序：访问 [http://127.0.0.1:8000/student/draft](http://127.0.0.1:8000/student/draft)，点击 ↑ / ↓ 调整课程顺序，前 4 门为主选，后 2 门为备选；点击“提交正式选课”。
+
+查看结果与成绩：访问 [http://127.0.0.1:8000/student/results](http://127.0.0.1:8000/student/results) 查看选中状态，访问 [http://127.0.0.1:8000/student/grades](http://127.0.0.1:8000/student/grades) 查看 GPA 与通过标记。
+教师端与教务端流程
+
+教师认领与花名册：
+
+访问 [http://127.0.0.1:8000/teacher/claim](http://127.0.0.1:8000/teacher/claim)，点击认领班次。
+
+访问 [http://127.0.0.1:8000/teacher/roster](http://127.0.0.1:8000/teacher/roster)，点击右上角“导出花名册”，确认能下载 .csv 表格文件。
+
+访问 [http://127.0.0.1:8000/teacher/grades](http://127.0.0.1:8000/teacher/grades)，输入超出 0~100 的成绩，验证前端范围拦截。
+
+教务管理与关选：
+
+访问 [http://127.0.0.1:8000/admin/close-registration](http://127.0.0.1:8000/admin/close-registration)，在输入框填入口令 CLOSE-CONFIRM，“正式关闭”按钮亮起，点击后跳转至关闭结果与账单状态页
+
+
+main.py里新添了5行代码在最后面
