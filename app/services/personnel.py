@@ -237,36 +237,36 @@ def _delete_account_and_sessions(db: Session, account: Account | None) -> None:
 
 
 def delete_or_deactivate_student(db: Session, student_id: int) -> str:
-    student = get_student(db, student_id)
-    account = _account_for_subject(db, AccountRole.STUDENT, student.id)
+    # 人员、账号与会话必须作为一个原子操作：全部成功才提交。
+    with db.begin():
+        student = get_student(db, student_id)
+        account = _account_for_subject(db, AccountRole.STUDENT, student.id)
 
-    if has_student_business_records(db, student.id):
-        student.active = False
-        if account is not None:
-            account.active = False
-            invalidate_sessions(db, account.id)
-        db.commit()
-        return "deactivated"
+        if has_student_business_records(db, student.id):
+            student.active = False
+            if account is not None:
+                account.active = False
+                invalidate_sessions(db, account.id)
+            return "deactivated"
 
-    _delete_account_and_sessions(db, account)
-    db.delete(student)
-    db.commit()
-    return "deleted"
+        _delete_account_and_sessions(db, account)
+        db.delete(student)
+        return "deleted"
 
 
 def delete_or_deactivate_teacher(db: Session, teacher_id: int) -> str:
-    teacher = get_teacher(db, teacher_id)
-    account = _account_for_subject(db, AccountRole.TEACHER, teacher.id)
+    # 与学生删除保持相同的事务边界，避免留下半完成状态。
+    with db.begin():
+        teacher = get_teacher(db, teacher_id)
+        account = _account_for_subject(db, AccountRole.TEACHER, teacher.id)
 
-    if has_teacher_business_records(db, teacher.id):
-        teacher.active = False
-        if account is not None:
-            account.active = False
-            invalidate_sessions(db, account.id)
-        db.commit()
-        return "deactivated"
+        if has_teacher_business_records(db, teacher.id):
+            teacher.active = False
+            if account is not None:
+                account.active = False
+                invalidate_sessions(db, account.id)
+            return "deactivated"
 
-    _delete_account_and_sessions(db, account)
-    db.delete(teacher)
-    db.commit()
-    return "deleted"
+        _delete_account_and_sessions(db, account)
+        db.delete(teacher)
+        return "deleted"
