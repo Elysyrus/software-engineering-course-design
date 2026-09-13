@@ -4,6 +4,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.services import personnel
 from app.models import Account, AccountRole, Course, Offering, Schedule, Semester, Student, Teacher
 from app.services.personnel import (
     create_student,
@@ -115,3 +116,26 @@ def test_teacher_with_offering_is_deactivated(db: Session):
     db.refresh(account)
     assert teacher.active is False
     assert account.active is False
+
+
+def test_deactivation_rolls_back_when_session_revocation_fails(db: Session, monkeypatch):
+    student = create_student(db, "事务回滚学生", "Initial123")
+    account = db.scalar(select(Account).where(Account.subject_id == student.id))
+    semester = Semester(code="2027-FALL", starts_on=date(2027, 9, 1), ends_on=date(2028, 1, 15))
+    db.add(semester)
+    db.flush()
+    db.add(Schedule(student_id=student.id, semester_id=semester.id))
+    db.commit()
+
+    def fail_to_revoke(_db, _account_id):
+        raise RuntimeError("模拟会话撤销失败")
+
+    monkeypatch.setattr(personnel, "invalidate_sessions", fail_to_revoke)
+
+    with pytest.raises(RuntimeError, match="模拟会话撤销失败"):
+        delete_or_deactivate_student(db, student.id)
+
+    db.refresh(student)
+    db.refresh(account)
+    assert student.active is True
+    assert account.active is True
