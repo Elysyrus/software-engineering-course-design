@@ -1,11 +1,13 @@
+from datetime import date
+
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.auth_contract import CurrentUser, current_user, require_registrar, require_student, require_teacher
 from app.database import get_db
-from app.models import AccountRole, Student, Teacher
-from app.services.auth import create_account, create_session
+from app.models import Account, AccountRole, Student, Teacher
+from app.services.auth import create_account, create_session, verify_password
 from web.web_routes import web_router
 
 
@@ -187,3 +189,113 @@ def test_first_login_can_open_change_password_page_only(db: Session):
     blocked = client.get("/student/courses", cookies={"session_id": session.id})
     assert blocked.status_code == 403
     assert blocked.json()["detail"] == "首次登录必须先修改密码"
+
+
+def test_registrar_can_create_student_and_teacher_via_admin_api(db: Session):
+    registrar = create_active_account(db, "R20260003", AccountRole.REGISTRAR, 3)
+    registrar_session = create_session(db, registrar)
+    client = TestClient(build_login_app(db))
+    auth = {"X-CSRF-Token": registrar_session.csrf_token}
+    cookies = {"session_id": registrar_session.id}
+
+    student = client.post(
+        "/api/v1/admin/users",
+        cookies=cookies,
+        headers=auth,
+        json={"full_name": "新学生", "role": "student"},
+    )
+    teacher = client.post(
+        "/api/v1/admin/users",
+        cookies=cookies,
+        headers=auth,
+        json={"full_name": "新教师", "role": "teacher", "department": "计算机学院"},
+    )
+
+    assert student.status_code == 201
+    assert student.json()["login_number"].startswith(str(date.today().year))
+    assert teacher.status_code == 201
+    assert teacher.json()["login_number"].startswith(f"T{date.today().year}")
+
+    users = client.get("/api/v1/admin/users", cookies=cookies)
+    assert users.status_code == 200
+    assert {item["role"] for item in users.json()} == {"student", "teacher"}
+
+
+def test_admin_user_creation_requires_registrar_and_csrf(db: Session):
+    student = create_active_account(db, "S20260010", AccountRole.STUDENT, 210)
+    session = create_session(db, student)
+    client = TestClient(build_login_app(db))
+    body = {"full_name": "不可创建", "role": "student"}
+
+    assert client.post("/api/v1/admin/users", json=body).status_code == 401
+    assert client.post(
+        "/api/v1/admin/users",
+        cookies={"session_id": session.id},
+        headers={"X-CSRF-Token": session.csrf_token},
+        json=body,
+    ).status_code == 403
+    assert client.get("/api/v1/admin/users").status_code == 401
+
+
+def test_registrar_can_manage_user_lifecycle_via_admin_api(db: Session):
+    registrar = create_active_account(db, "R20260004", AccountRole.REGISTRAR, 4)
+    registrar_session = create_session(db, registrar)
+    client = TestClient(build_login_app(db))
+    cookies = {"session_id": registrar_session.id}
+    headers = {"X-CSRF-Token": registrar_session.csrf_token}
+
+    created = client.post(
+        "/api/v1/admin/users",
+        cookies=cookies,
+        headers=headers,
+        json={"full_name": "待管理学生", "role": "student"},
+    )
+    account_id = created.json()["id"]
+
+    detail = client.get(f"/api/v1/admin/users/{account_id}", cookies=cookies)
+    assert detail.status_code == 200
+    assert detail.json()["full_name"] == "待管理学生"
+
+    updated = client.patch(
+        f"/api/v1/admin/users/{account_id}",
+        cookies=cookies,
+        headers=headers,
+        json={"full_name": "已更新学生"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["full_name"] == "已更新学生"
+
+    missing_csrf = client.patch(
+        f"/api/v1/admin/users/{account_id}/status",
+        cookies=cookies,
+        json={"is_active": False},
+    )
+    assert missing_csrf.status_code == 403
+
+    disabled = client.patch(
+        f"/api/v1/admin/users/{account_id}/status",
+        cookies=cookies,
+        headers=headers,
+        json={"is_active": False},
+    )
+    assert disabled.status_code == 200
+    assert disabled.json()["is_active"] is False
+
+    reset = client.post(
+        f"/api/v1/admin/users/{account_id}/reset-password",
+        cookies=cookies,
+        headers=headers,
+    )
+    assert reset.status_code == 200
+    account = db.get(Account, account_id)
+    assert account.must_change_password is True
+    assert verify_password("Initial123", account.password_hash) is True
+
+    deleted = client.delete(
+        f"/api/v1/admin/users/{account_id}",
+        cookies=cookies,
+        headers=headers,
+    )
+    assert deleted.status_code == 200
+    assert deleted.json()["action"] == "deleted"
+    assert client.get(f"/api/v1/admin/users/{account_id}", cookies=cookies).status_code == 404
