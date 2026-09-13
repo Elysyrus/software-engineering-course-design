@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.services import personnel
 from app.models import Account, AccountRole, Course, Offering, Schedule, Semester, Student, Teacher
+from app.services.auth import verify_password
 from app.services.personnel import (
     create_student,
     create_teacher,
@@ -15,8 +16,10 @@ from app.services.personnel import (
     get_teacher,
     list_students,
     list_teachers,
+    list_users_for_registrar,
     update_student,
     update_teacher,
+    init_registrar
 )
 
 
@@ -56,6 +59,14 @@ def test_list_get_and_update_personnel(db: Session):
     assert updated_teacher.department == "计算机学院"
     assert get_student(db, first.id).id == first.id
     assert get_teacher(db, teacher.id).id == teacher.id
+    student_account = db.scalar(select(Account).where(Account.subject_id == first.id))
+    assert student_account.active is False
+    users = list_users_for_registrar(db)
+    assert {user["username"] for user in users} == {
+        first.student_number,
+        second.student_number,
+        teacher.teacher_number,
+    }
 
 
 def test_get_personnel_rejects_missing_record(db: Session):
@@ -139,3 +150,67 @@ def test_deactivation_rolls_back_when_session_revocation_fails(db: Session, monk
     db.refresh(account)
     assert student.active is True
     assert account.active is True
+
+
+
+def test_init_registrar_creates_account(db: Session):
+    account = init_registrar(
+        db,
+        login_number="registrar",
+        initial_password="Initial123",
+    )
+
+    assert account.role == AccountRole.REGISTRAR
+    assert account.login_number == "registrar"
+    assert account.subject_id == account.id
+    assert account.must_change_password is True
+    assert account.active is True
+    assert verify_password(
+        "Initial123",
+        account.password_hash,
+    ) is True
+
+def test_init_registrar_is_idempotent(db: Session):
+    first = init_registrar(
+        db,
+        login_number="registrar",
+        initial_password="Initial123",
+    )
+    original_hash = first.password_hash
+
+    second = init_registrar(
+        db,
+        login_number="other-registrar",
+        initial_password="Changed123",
+    )
+
+    registrars = db.scalars(
+        select(Account).where(
+            Account.role == AccountRole.REGISTRAR
+        )
+    ).all()
+
+    assert first.id == second.id
+    assert len(registrars) == 1
+    assert second.password_hash == original_hash
+    assert verify_password(
+        "Changed123",
+        second.password_hash,
+    ) is False
+
+
+def test_init_registrar_rejects_weak_password(db: Session):
+    with pytest.raises(ValueError):
+        init_registrar(
+            db,
+            login_number="registrar",
+            initial_password="weak",
+        )
+
+    account = db.scalar(
+        select(Account).where(
+            Account.role == AccountRole.REGISTRAR
+        )
+    )
+
+    assert account is None

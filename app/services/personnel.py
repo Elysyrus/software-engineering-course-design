@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from datetime import date
 
 from sqlalchemy import func, select
@@ -14,8 +15,23 @@ from app.models import (
     Student,
     Teacher,
 )
+from app.services.auth import (
+    create_account,
+    hash_password,
+    invalidate_sessions,
+    validate_password,
+)
 
-from app.services.auth import create_account, invalidate_sessions
+
+@contextmanager
+def _atomic(db: Session):
+    """统一写事务：兼容 SQLAlchemy 因前置查询而自动开启的事务。"""
+    try:
+        yield
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
 def generate_login_number(
     db: Session,
@@ -50,7 +66,7 @@ def create_student(
     name: str,
     initial_password: str,
 ) -> Student:
-    with db.begin():
+    with _atomic(db):
         login_number = generate_login_number(
             db,
             AccountRole.STUDENT,
@@ -82,7 +98,7 @@ def create_teacher(
     department: str,
     initial_password: str,
 ) -> Teacher:
-    with db.begin():
+    with _atomic(db):
         login_number = generate_login_number(
             db,
             AccountRole.TEACHER,
@@ -170,14 +186,19 @@ def update_student(
     name: str | None = None,
     active: bool | None = None,
 ) -> Student:
-    student = get_student(db, student_id)
-    if name is not None:
-        if not name.strip():
-            raise ValueError("学生姓名不能为空")
-        student.name = name.strip()
-    if active is not None:
-        student.active = active
-    db.commit()
+    with _atomic(db):
+        student = get_student(db, student_id)
+        if name is not None:
+            if not name.strip():
+                raise ValueError("学生姓名不能为空")
+            student.name = name.strip()
+        if active is not None:
+            student.active = active
+            account = _account_for_subject(db, AccountRole.STUDENT, student.id)
+            if account is not None:
+                account.active = active
+                if not active:
+                    invalidate_sessions(db, account.id)
     db.refresh(student)
     return student
 
@@ -190,18 +211,139 @@ def update_teacher(
     department: str | None = None,
     active: bool | None = None,
 ) -> Teacher:
-    teacher = get_teacher(db, teacher_id)
-    if name is not None:
-        if not name.strip():
-            raise ValueError("教师姓名不能为空")
-        teacher.name = name.strip()
-    if department is not None:
-        teacher.department = department.strip()
-    if active is not None:
-        teacher.active = active
-    db.commit()
+    with _atomic(db):
+        teacher = get_teacher(db, teacher_id)
+        if name is not None:
+            if not name.strip():
+                raise ValueError("教师姓名不能为空")
+            teacher.name = name.strip()
+        if department is not None:
+            teacher.department = department.strip()
+        if active is not None:
+            teacher.active = active
+            account = _account_for_subject(db, AccountRole.TEACHER, teacher.id)
+            if account is not None:
+                account.active = active
+                if not active:
+                    invalidate_sessions(db, account.id)
     db.refresh(teacher)
     return teacher
+
+
+def list_users_for_registrar(db: Session) -> list[dict[str, int | str | bool]]:
+    """合并学生和教师资料，返回教务用户管理页面需要的公开字段。"""
+    users: list[dict[str, int | str | bool]] = []
+    accounts = db.scalars(
+        select(Account)
+        .where(Account.role.in_((AccountRole.STUDENT, AccountRole.TEACHER)))
+        .order_by(Account.login_number)
+    )
+
+    for account in accounts:
+        if account.role == AccountRole.STUDENT:
+            student = db.get(Student, account.subject_id)
+            if student is None:
+                continue
+            users.append(
+                {
+                    "id": account.id,
+                    "username": account.login_number,
+                    "full_name": student.name,
+                    "role": "student",
+                    "department": "",
+                    "is_active": account.active and student.active,
+                }
+            )
+        else:
+            teacher = db.get(Teacher, account.subject_id)
+            if teacher is None:
+                continue
+            users.append(
+                {
+                    "id": account.id,
+                    "username": account.login_number,
+                    "full_name": teacher.name,
+                    "role": "teacher",
+                    "department": teacher.department,
+                    "is_active": account.active and teacher.active,
+                }
+            )
+    return users
+
+
+def _managed_account(db: Session, account_id: int) -> Account:
+    account = db.get(Account, account_id)
+    if account is None or account.role not in {AccountRole.STUDENT, AccountRole.TEACHER}:
+        raise ValueError("师生账号不存在")
+    return account
+
+
+def _user_payload(db: Session, account: Account) -> dict[str, int | str | bool]:
+    if account.role == AccountRole.STUDENT:
+        student = get_student(db, account.subject_id)
+        return {
+            "id": account.id,
+            "username": account.login_number,
+            "full_name": student.name,
+            "role": "student",
+            "department": "",
+            "is_active": account.active and student.active,
+        }
+    teacher = get_teacher(db, account.subject_id)
+    return {
+        "id": account.id,
+        "username": account.login_number,
+        "full_name": teacher.name,
+        "role": "teacher",
+        "department": teacher.department,
+        "is_active": account.active and teacher.active,
+    }
+
+
+def get_user_for_registrar(db: Session, account_id: int) -> dict[str, int | str | bool]:
+    return _user_payload(db, _managed_account(db, account_id))
+
+
+def update_user_for_registrar(
+    db: Session,
+    account_id: int,
+    *,
+    full_name: str | None = None,
+    department: str | None = None,
+) -> dict[str, int | str | bool]:
+    account = _managed_account(db, account_id)
+    if account.role == AccountRole.STUDENT:
+        if department is not None:
+            raise ValueError("学生不能设置院系")
+        update_student(db, account.subject_id, name=full_name)
+    else:
+        update_teacher(db, account.subject_id, name=full_name, department=department)
+    return get_user_for_registrar(db, account_id)
+
+
+def set_account_status(db: Session, account_id: int, is_active: bool) -> dict[str, int | str | bool]:
+    account = _managed_account(db, account_id)
+    if account.role == AccountRole.STUDENT:
+        update_student(db, account.subject_id, active=is_active)
+    else:
+        update_teacher(db, account.subject_id, active=is_active)
+    return get_user_for_registrar(db, account_id)
+
+
+def reset_account_password(db: Session, account_id: int, initial_password: str) -> None:
+    with _atomic(db):
+        account = _managed_account(db, account_id)
+        validate_password(initial_password)
+        account.password_hash = hash_password(initial_password)
+        account.must_change_password = True
+        invalidate_sessions(db, account.id)
+
+
+def delete_user_for_registrar(db: Session, account_id: int) -> str:
+    account = _managed_account(db, account_id)
+    if account.role == AccountRole.STUDENT:
+        return delete_or_deactivate_student(db, account.subject_id)
+    return delete_or_deactivate_teacher(db, account.subject_id)
 
 
 def has_student_business_records(db: Session, student_id: int) -> bool:
@@ -238,7 +380,7 @@ def _delete_account_and_sessions(db: Session, account: Account | None) -> None:
 
 def delete_or_deactivate_student(db: Session, student_id: int) -> str:
     # 人员、账号与会话必须作为一个原子操作：全部成功才提交。
-    with db.begin():
+    with _atomic(db):
         student = get_student(db, student_id)
         account = _account_for_subject(db, AccountRole.STUDENT, student.id)
 
@@ -251,12 +393,12 @@ def delete_or_deactivate_student(db: Session, student_id: int) -> str:
 
         _delete_account_and_sessions(db, account)
         db.delete(student)
-        return "deleted"
+    return "deleted"
 
 
 def delete_or_deactivate_teacher(db: Session, teacher_id: int) -> str:
     # 与学生删除保持相同的事务边界，避免留下半完成状态。
-    with db.begin():
+    with _atomic(db):
         teacher = get_teacher(db, teacher_id)
         account = _account_for_subject(db, AccountRole.TEACHER, teacher.id)
 
@@ -269,4 +411,24 @@ def delete_or_deactivate_teacher(db: Session, teacher_id: int) -> str:
 
         _delete_account_and_sessions(db, account)
         db.delete(teacher)
-        return "deleted"
+    return "deleted"
+
+
+
+def init_registrar(db: Session, login_number: str, initial_password: str) -> Account:
+    with _atomic(db):
+        existing = db.scalar(select(Account).where(Account.role == AccountRole.REGISTRAR))
+
+        if existing is not None:
+              return existing
+        account = create_account(
+            db=db,
+            login_number=login_number,
+            password=initial_password,
+            role=AccountRole.REGISTRAR,
+            subject_id=0,
+        )
+
+        account.subject_id = account.id
+
+    return account
