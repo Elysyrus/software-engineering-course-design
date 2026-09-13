@@ -12,10 +12,10 @@ def test_seed_demo_data_creates_records_once_and_reuses_them(db: Session):
     first = seed_demo_data("Registrar123", session_factory=factory)
     second = seed_demo_data("OtherPassword123", session_factory=factory)
 
-    assert first == {"registrar": 1, "students": 3, "teachers": 2, "courses": 3}
+    assert first == {"registrar": 1, "students": 10, "teachers": 10, "courses": 3}
     assert second == {"registrar": 0, "students": 0, "teachers": 0, "courses": 0}
-    assert db.scalar(select(func.count()).select_from(Student)) == 3
-    assert db.scalar(select(func.count()).select_from(Teacher)) == 2
+    assert db.scalar(select(func.count()).select_from(Student)) == 10
+    assert db.scalar(select(func.count()).select_from(Teacher)) == 10
     assert db.scalar(select(func.count()).select_from(Course)) == 3
 
     registrar = db.scalar(select(Account).where(Account.role == AccountRole.REGISTRAR))

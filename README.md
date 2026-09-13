@@ -49,7 +49,7 @@ DATABASE_URL=sqlite:///./course_registration.db
 
 ## 可选：初始化答辩演示数据
 
-初始化教务账号后，可批量补充 3 名演示学生、2 名演示教师和 3 门演示课程：
+初始化教务账号后，可批量补充 10 名随机姓名的演示学生、10 名随机姓名的演示教师和 3 门演示课程：
 
 ```powershell
 .\.venv\Scripts\python.exe -m scripts.seed_demo_data
