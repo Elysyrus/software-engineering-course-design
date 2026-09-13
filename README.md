@@ -12,7 +12,7 @@
 - 关闭事务内固定最终课表和金额，创建待发送账单；实际发送和重试由成员 4 接入。
 - 开发环境身份适配器已提供；正式会话认证由成员 3 替换。
 
-## 本地运行
+## 本地运行	
 
 ```powershell
 py -3.12 -m venv .venv
@@ -33,7 +33,29 @@ DATABASE_URL=sqlite:///./course_registration.db
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --reload
 ```
 
-打开 `http://127.0.0.1:8000/docs` 查看接口。当前开发身份请求头示例：学生使用 `X-Role: student` 和 `X-Subject-ID: 1`；教务使用 `X-Role: registrar`。该方式只用于成员 3 接入认证之前，非开发环境会主动拒绝。
+打开 `http://127.0.0.1:8000/docs` 查看接口。登录后浏览器会保存 `HttpOnly` 会话 Cookie；所有写请求会自动提交 CSRF Token。完整约定见 [接口文档](docs/接口约定.md)。
+
+## 初始化教务账号
+
+首次使用空数据库时，在项目根目录执行：
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.init_registrar --login-number registrar
+```
+
+脚本会安全地提示输入初始密码，不会回显或输出密码。也可为部署环境设置 `INITIAL_REGISTRAR_PASSWORD` 环境变量后执行同一命令。脚本可重复运行：若教务账号已存在，会保留原账号和密码。
+
+普通学生、教师的初始密码：当前统一为  **`Initial123`** 。
+
+## 可选：初始化答辩演示数据
+
+初始化教务账号后，可批量补充 3 名演示学生、2 名演示教师和 3 门演示课程：
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.seed_demo_data
+```
+
+脚本会提示输入教务初始密码，也支持 `INITIAL_REGISTRAR_PASSWORD` 环境变量。它可以重复执行，只创建缺失的演示记录；新建师生的登录编号由系统生成，初始密码均为 `Initial123`，首次登录必须修改。
 
 ## 测试
 
