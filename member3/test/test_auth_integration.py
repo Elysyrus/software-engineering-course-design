@@ -4,8 +4,23 @@ from sqlalchemy.orm import Session
 
 from app.auth_contract import CurrentUser, current_user, require_registrar, require_student, require_teacher
 from app.database import get_db
-from app.models import AccountRole
+from app.models import AccountRole, Student, Teacher
 from app.services.auth import create_account, create_session
+from web.web_routes import web_router
+
+
+def create_active_account(
+    db: Session, login_number: str, role: AccountRole, subject_id: int, *, must_change_password: bool = False
+):
+    if role == AccountRole.STUDENT:
+        db.add(Student(id=subject_id, student_number=login_number, name="测试学生"))
+    elif role == AccountRole.TEACHER:
+        db.add(Teacher(id=subject_id, teacher_number=login_number, name="测试教师", department="测试院系"))
+    db.commit()
+    account = create_account(db, login_number, "Initial123", role, subject_id)
+    account.must_change_password = must_change_password
+    db.commit()
+    return account
 
 
 def build_auth_app(db: Session) -> FastAPI:
@@ -36,8 +51,19 @@ def build_auth_app(db: Session) -> FastAPI:
     return app
 
 
+def build_login_app(db: Session) -> FastAPI:
+    app = FastAPI()
+
+    def override_get_db():
+        yield db
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.include_router(web_router)
+    return app
+
+
 def test_cookie_session_is_converted_to_current_user(db: Session):
-    account = create_account(db, "S20260002", "Initial123", AccountRole.STUDENT, 202)
+    account = create_active_account(db, "S20260002", AccountRole.STUDENT, 202)
     session = create_session(db, account)
     client = TestClient(build_auth_app(db))
 
@@ -55,9 +81,9 @@ def test_missing_cookie_is_unauthenticated(db: Session):
 
 
 def test_role_guards_allow_only_the_matching_role(db: Session):
-    student = create_account(db, "S20260003", "Initial123", AccountRole.STUDENT, 203)
-    teacher = create_account(db, "T20260001", "Initial123", AccountRole.TEACHER, 301)
-    registrar = create_account(db, "R20260001", "Initial123", AccountRole.REGISTRAR, 1)
+    student = create_active_account(db, "S20260003", AccountRole.STUDENT, 203)
+    teacher = create_active_account(db, "T20260001", AccountRole.TEACHER, 301)
+    registrar = create_active_account(db, "R20260001", AccountRole.REGISTRAR, 1)
     client = TestClient(build_auth_app(db))
 
     assert client.get("/student-only", cookies={"session_id": create_session(db, student).id}).status_code == 200
@@ -67,7 +93,7 @@ def test_role_guards_allow_only_the_matching_role(db: Session):
 
 
 def test_disabling_an_account_blocks_an_existing_cookie(db: Session):
-    account = create_account(db, "S20260004", "Initial123", AccountRole.STUDENT, 204)
+    account = create_active_account(db, "S20260004", AccountRole.STUDENT, 204)
     session = create_session(db, account)
     account.active = False
     db.commit()
@@ -77,3 +103,87 @@ def test_disabling_an_account_blocks_an_existing_cookie(db: Session):
     assert response.status_code == 403
     assert response.json()["detail"] == "账号已被禁用"
 
+
+def test_disabling_the_linked_student_blocks_an_existing_cookie(db: Session):
+    account = create_active_account(db, "S20260007", AccountRole.STUDENT, 207)
+    session = create_session(db, account)
+    student = db.get(Student, 207)
+    student.active = False
+    db.commit()
+
+    response = TestClient(build_auth_app(db)).get("/me", cookies={"session_id": session.id})
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "关联人员已被禁用"
+
+
+def test_first_login_cannot_use_regular_current_user(db: Session):
+    account = create_active_account(
+        db, "S20260005", AccountRole.STUDENT, 205, must_change_password=True
+    )
+    session = create_session(db, account)
+
+    response = TestClient(build_auth_app(db)).get("/me", cookies={"session_id": session.id})
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "首次登录必须先修改密码"
+
+
+def test_login_change_password_and_logout_routes_require_csrf(db: Session):
+    create_active_account(
+        db, "S20260006", AccountRole.STUDENT, 206, must_change_password=True
+    )
+    client = TestClient(build_login_app(db))
+
+    login = client.post("/api/v1/auth/login", json={"username": "S20260006", "password": "Initial123"})
+    assert login.status_code == 200
+    assert login.json() == {"role": "student", "is_first_login": True}
+    assert "session_id" in login.headers["set-cookie"]
+    assert "HttpOnly" in login.headers["set-cookie"]
+
+    missing_csrf = client.post(
+        "/api/v1/auth/change-password",
+        json={"old_password": "Initial123", "new_password": "Changed123"},
+    )
+    assert missing_csrf.status_code == 403
+
+    csrf_token = client.cookies.get("csrf_token")
+    changed = client.post(
+        "/api/v1/auth/change-password",
+        headers={"X-CSRF-Token": csrf_token},
+        json={"old_password": "Initial123", "new_password": "Changed123"},
+    )
+    assert changed.status_code == 200
+    assert client.cookies.get("session_id") is None
+
+    relogin = client.post("/api/v1/auth/login", json={"username": "S20260006", "password": "Changed123"})
+    assert relogin.status_code == 200
+    logout_response = client.post("/api/v1/auth/logout", headers={"X-CSRF-Token": client.cookies.get("csrf_token")})
+    assert logout_response.status_code == 200
+    assert client.cookies.get("session_id") is None
+
+
+def test_page_entries_require_real_login_and_matching_role(db: Session):
+    student = create_active_account(db, "S20260008", AccountRole.STUDENT, 208)
+    teacher = create_active_account(db, "T20260002", AccountRole.TEACHER, 302)
+    registrar = create_active_account(db, "R20260002", AccountRole.REGISTRAR, 2)
+    client = TestClient(build_login_app(db))
+
+    assert client.get("/student/courses").status_code == 401
+    assert client.get("/student/courses", cookies={"session_id": create_session(db, student).id}).status_code == 200
+    assert client.get("/student/courses", cookies={"session_id": create_session(db, teacher).id}).status_code == 403
+    assert client.get("/teacher/claim", cookies={"session_id": create_session(db, teacher).id}).status_code == 200
+    assert client.get("/admin/users", cookies={"session_id": create_session(db, registrar).id}).status_code == 200
+
+
+def test_first_login_can_open_change_password_page_only(db: Session):
+    account = create_active_account(
+        db, "S20260009", AccountRole.STUDENT, 209, must_change_password=True
+    )
+    session = create_session(db, account)
+    client = TestClient(build_login_app(db))
+
+    assert client.get("/change-password", cookies={"session_id": session.id}).status_code == 200
+    blocked = client.get("/student/courses", cookies={"session_id": session.id})
+    assert blocked.status_code == 403
+    assert blocked.json()["detail"] == "首次登录必须先修改密码"

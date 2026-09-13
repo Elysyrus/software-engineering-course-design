@@ -1,9 +1,30 @@
 from pathlib import Path
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+from app.config import get_settings
+from app.auth_contract import (
+    CurrentUser,
+    current_user,
+    current_user_for_password_change,
+    require_registrar,
+    require_student,
+    require_teacher,
+)
+from app.database import get_db
+from app.models import ServerSession, Student, Teacher
+from app.services.auth import (
+    authenticate_user,
+    change_password,
+    create_session,
+    get_session_account,
+    logout,
+    validate_csrf,
+)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 templates = Jinja2Templates(directory=BASE_DIR / "web" / "templates")
@@ -22,60 +43,75 @@ async def root():
 async def page_login(request: Request):
     return templates.TemplateResponse("auth/login.html", {"request": request, "user": None})
 
+
+def _template_user(db: Session, user: CurrentUser) -> dict[str, str | int]:
+    """把可信身份转换为模板显示所需的最小公开资料。"""
+    if user.role == "student":
+        student = db.get(Student, user.subject_id)
+        return {"username": student.student_number, "full_name": student.name, "role": "student"}
+    if user.role == "teacher":
+        teacher = db.get(Teacher, user.subject_id)
+        return {"username": teacher.teacher_number, "full_name": teacher.name, "role": "teacher"}
+    return {"username": "registrar", "full_name": "教务管理员", "role": "registrar"}
+
+
 @web_router.get("/change-password")
-async def page_change_password(request: Request):
-    user = {"username": "2024001", "full_name": "当前用户", "role": "student"}
-    return templates.TemplateResponse("auth/change_password.html", {"request": request, "user": user})
+async def page_change_password(
+    request: Request,
+    user: CurrentUser = Depends(current_user_for_password_change),
+    db: Session = Depends(get_db),
+):
+    return templates.TemplateResponse("auth/change_password.html", {"request": request, "user": _template_user(db, user)})
 
 @web_router.get("/student/courses")
-async def page_student_courses(request: Request):
-    user = {"username": "2024001", "full_name": "张三", "role": "student"}
-    return templates.TemplateResponse("student/courses.html", {"request": request, "user": user, "active_nav": "courses"})
+async def page_student_courses(request: Request, user: CurrentUser = Depends(current_user), db: Session = Depends(get_db)):
+    require_student(user)
+    return templates.TemplateResponse("student/courses.html", {"request": request, "user": _template_user(db, user), "active_nav": "courses"})
 
 @web_router.get("/student/draft")
-async def page_student_draft(request: Request):
-    user = {"username": "2024001", "full_name": "张三", "role": "student"}
-    return templates.TemplateResponse("student/draft.html", {"request": request, "user": user, "active_nav": "draft"})
+async def page_student_draft(request: Request, user: CurrentUser = Depends(current_user), db: Session = Depends(get_db)):
+    require_student(user)
+    return templates.TemplateResponse("student/draft.html", {"request": request, "user": _template_user(db, user), "active_nav": "draft"})
 
 @web_router.get("/student/results")
-async def page_student_results(request: Request):
-    user = {"username": "2024001", "full_name": "张三", "role": "student"}
-    return templates.TemplateResponse("student/results.html", {"request": request, "user": user, "active_nav": "results"})
+async def page_student_results(request: Request, user: CurrentUser = Depends(current_user), db: Session = Depends(get_db)):
+    require_student(user)
+    return templates.TemplateResponse("student/results.html", {"request": request, "user": _template_user(db, user), "active_nav": "results"})
 
 @web_router.get("/student/grades")
-async def page_student_grades(request: Request):
-    user = {"username": "2024001", "full_name": "张三", "role": "student"}
-    return templates.TemplateResponse("student/grades.html", {"request": request, "user": user, "active_nav": "grades"})
+async def page_student_grades(request: Request, user: CurrentUser = Depends(current_user), db: Session = Depends(get_db)):
+    require_student(user)
+    return templates.TemplateResponse("student/grades.html", {"request": request, "user": _template_user(db, user), "active_nav": "grades"})
 
 @web_router.get("/teacher/claim")
-async def page_teacher_claim(request: Request):
-    user = {"username": "T1001", "full_name": "李老师", "role": "teacher"}
-    return templates.TemplateResponse("teacher/claim.html", {"request": request, "user": user, "active_nav": "claim"})
+async def page_teacher_claim(request: Request, user: CurrentUser = Depends(current_user), db: Session = Depends(get_db)):
+    require_teacher(user)
+    return templates.TemplateResponse("teacher/claim.html", {"request": request, "user": _template_user(db, user), "active_nav": "claim"})
 
 @web_router.get("/teacher/roster")
-async def page_teacher_roster(request: Request):
-    user = {"username": "T1001", "full_name": "李老师", "role": "teacher"}
-    return templates.TemplateResponse("teacher/roster.html", {"request": request, "user": user, "active_nav": "roster"})
+async def page_teacher_roster(request: Request, user: CurrentUser = Depends(current_user), db: Session = Depends(get_db)):
+    require_teacher(user)
+    return templates.TemplateResponse("teacher/roster.html", {"request": request, "user": _template_user(db, user), "active_nav": "roster"})
 
 @web_router.get("/teacher/grades")
-async def page_teacher_grades(request: Request):
-    user = {"username": "T1001", "full_name": "李老师", "role": "teacher"}
-    return templates.TemplateResponse("teacher/grades.html", {"request": request, "user": user, "active_nav": "grades"})
+async def page_teacher_grades(request: Request, user: CurrentUser = Depends(current_user), db: Session = Depends(get_db)):
+    require_teacher(user)
+    return templates.TemplateResponse("teacher/grades.html", {"request": request, "user": _template_user(db, user), "active_nav": "grades"})
 
 @web_router.get("/admin/users")
-async def page_admin_users(request: Request):
-    user = {"username": "admin", "full_name": "教务管理员", "role": "admin"}
-    return templates.TemplateResponse("admin/users.html", {"request": request, "user": user, "active_nav": "users"})
+async def page_admin_users(request: Request, user: CurrentUser = Depends(current_user), db: Session = Depends(get_db)):
+    require_registrar(user)
+    return templates.TemplateResponse("admin/users.html", {"request": request, "user": _template_user(db, user), "active_nav": "users"})
 
 @web_router.get("/admin/close-registration")
-async def page_admin_close(request: Request):
-    user = {"username": "admin", "full_name": "教务管理员", "role": "admin"}
-    return templates.TemplateResponse("admin/close_registration.html", {"request": request, "user": user, "active_nav": "close"})
+async def page_admin_close(request: Request, user: CurrentUser = Depends(current_user), db: Session = Depends(get_db)):
+    require_registrar(user)
+    return templates.TemplateResponse("admin/close_registration.html", {"request": request, "user": _template_user(db, user), "active_nav": "close"})
 
 @web_router.get("/admin/closing-status")
-async def page_admin_status(request: Request):
-    user = {"username": "admin", "full_name": "教务管理员", "role": "admin"}
-    return templates.TemplateResponse("admin/closing_status.html", {"request": request, "user": user, "active_nav": "status"})
+async def page_admin_status(request: Request, user: CurrentUser = Depends(current_user), db: Session = Depends(get_db)):
+    require_registrar(user)
+    return templates.TemplateResponse("admin/closing_status.html", {"request": request, "user": _template_user(db, user), "active_nav": "status"})
 
 
 # ========================================================
@@ -124,26 +160,54 @@ MOCK_STATE = {
     "results": []
 }
 
+def _set_auth_cookies(response: Response, session: ServerSession) -> None:
+    """会话 ID 仅由服务器读取；CSRF 值供同源页面写请求提交。"""
+    secure = get_settings().app_env != "development"
+    response.set_cookie("session_id", session.id, httponly=True, samesite="lax", secure=secure)
+    response.set_cookie("csrf_token", session.csrf_token, httponly=False, samesite="lax", secure=secure)
+
+
 @web_router.post("/api/v1/auth/login")
-async def api_login(req: LoginReq):
-    is_first = (req.password == "123456")
-    role = "student"
-    if "teacher" in req.username.lower() or req.username.startswith("T"):
-        role = "teacher"
-    elif "admin" in req.username.lower():
-        role = "admin"
-    return {
-        "access_token": "mock-jwt-token-secd",
-        "token_type": "bearer",
-        "role": role,
-        "is_first_login": is_first
-    }
+async def api_login(req: LoginReq, db: Session = Depends(get_db)):
+    account = authenticate_user(db, req.username, req.password)
+    session = create_session(db, account)
+    response = JSONResponse(
+        {
+            "role": account.role.value,
+            "is_first_login": account.must_change_password,
+        }
+    )
+    _set_auth_cookies(response, session)
+    return response
 
 @web_router.post("/api/v1/auth/change-password")
-async def api_change_password(req: ChangePwdReq):
-    if len(req.new_password) < 8:
-        raise HTTPException(status_code=400, detail="新密码安全强度不足，长度需不少于 8 位")
-    return {"message": "密码修改成功"}
+async def api_change_password(req: ChangePwdReq, request: Request, db: Session = Depends(get_db)):
+    session_id = request.cookies.get("session_id")
+    if session_id is None:
+        raise HTTPException(status_code=401, detail="未登录")
+    account = get_session_account(db, session_id, allow_password_change=True)
+    session = db.get(ServerSession, session_id)
+    validate_csrf(session, request.headers.get("X-CSRF-Token"))
+    change_password(db, account, req.old_password, req.new_password)
+    response = JSONResponse({"message": "密码修改成功，请重新登录"})
+    response.delete_cookie("session_id")
+    response.delete_cookie("csrf_token")
+    return response
+
+
+@web_router.post("/api/v1/auth/logout")
+async def api_logout(request: Request, db: Session = Depends(get_db)):
+    session_id = request.cookies.get("session_id")
+    if session_id is not None:
+        # Logout remains available to users who must change their initial password.
+        get_session_account(db, session_id, allow_password_change=True)
+        session = db.get(ServerSession, session_id)
+        validate_csrf(session, request.headers.get("X-CSRF-Token"))
+        logout(db, session_id)
+    response = JSONResponse({"message": "已退出登录"})
+    response.delete_cookie("session_id")
+    response.delete_cookie("csrf_token")
+    return response
 
 @web_router.get("/api/v1/student/available-sections")
 async def api_available_sections():

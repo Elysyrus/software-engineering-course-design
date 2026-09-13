@@ -3,13 +3,10 @@
 from argon2 import PasswordHasher
 password_hasher = PasswordHasher()
 from argon2.exceptions import VerifyMismatchError
-from app.models import Account, AccountRole, ServerSession
+from app.models import Account, AccountRole, ServerSession, Student, Teacher
 
 
 from fastapi import HTTPException
-from sqlalchemy import select
-
-
 from sqlalchemy import select, update
 
 
@@ -18,7 +15,7 @@ import secrets
 from datetime import datetime, timedelta, UTC
 from sqlalchemy.orm import Session
 
-###阶段一
+###stage 1
 
 
 def validate_password(password: str) -> None:
@@ -42,12 +39,12 @@ def verify_password(password: str, password_hash: str) -> bool:
         return False
 
 
-###阶段二
+###stage 2
 
 
 
 def create_account(
-    db: ServerSession,
+    db: Session,
     login_number: str,
     password: str,
     role: AccountRole,
@@ -75,13 +72,13 @@ def create_account(
     )
 
     db.add(account)
-    db.commit()
-    db.refresh(account) #reread accounts.id
+    # 写入但不提交：创建人员资料和账号时可由外层事务统一回滚。
+    db.flush()
 
     return account
 
 def authenticate_user(
-    db: ServerSession,
+    db: Session,
     login_number: str,
     password: str,
 ) -> Account:
@@ -116,7 +113,7 @@ def authenticate_user(
 
 
 
-###阶段三
+###stage 3
 
 def create_session(
     db: Session,
@@ -142,6 +139,8 @@ def create_session(
 def get_session_account(
     db: Session,
     session_id: str,
+    *,
+    allow_password_change: bool = False,
 ) -> Account:
 
     session = db.get(ServerSession, session_id)
@@ -157,7 +156,11 @@ def get_session_account(
             status_code=401,
             detail="登录状态已失效",
         )
-    now = datetime.now(UTC).replace(tzinfo=None)
+    # SQLite returns a naive datetime even when the Python value was UTC-aware.
+    # Keep the comparison compatible with both SQLite and timezone-aware engines.
+    now = datetime.now(UTC)
+    if session.expires_at.tzinfo is None:
+        now = now.replace(tzinfo=None)
 
     if session.expires_at <= now:
         raise HTTPException(
@@ -179,9 +182,25 @@ def get_session_account(
             detail="账号已被禁用",
         )
 
+    if account.role == AccountRole.STUDENT:
+        subject = db.get(Student, account.subject_id)
+    elif account.role == AccountRole.TEACHER:
+        subject = db.get(Teacher, account.subject_id)
+    else:
+        subject = None
+
+    if account.role in {AccountRole.STUDENT, AccountRole.TEACHER}:
+        if subject is None:
+            raise HTTPException(status_code=401, detail="关联人员不存在")
+        if not subject.active:
+            raise HTTPException(status_code=403, detail="关联人员已被禁用")
+
+    if account.must_change_password and not allow_password_change:
+        raise HTTPException(status_code=403, detail="首次登录必须先修改密码")
+
     return account
 
-###阶段四
+###stage 4
 
 def invalidate_sessions(
     db: Session,
@@ -198,7 +217,6 @@ def invalidate_sessions(
         .values(revoked_at=now)
     )
 
-    db.commit()
 
 
 def change_password(
@@ -223,12 +241,11 @@ def change_password(
     account.must_change_password = False
 
     db.add(account)
-    db.commit()
-
     invalidate_sessions(
         db,
         account.id,
     )
+    db.commit()
 
 
 

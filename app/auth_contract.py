@@ -10,6 +10,7 @@ from app.config import get_settings
 
 
 from .database import get_db
+from app.models import Account
 from app.services.auth import get_session_account
 
 
@@ -43,10 +44,11 @@ class CurrentUser:
 #     return user.subject_id
 
 ### updated on 9.13 Accepting the actual request by sjy
-def current_user(
+def current_account(
     session_id: str | None = Cookie(default=None),
     db: Session = Depends(get_db),
-) -> CurrentUser:
+) -> Account:
+    """供正常业务入口使用：首次登录未改密的账号会被拒绝。"""
 
     if session_id is None:
         raise HTTPException(
@@ -54,9 +56,30 @@ def current_user(
             detail="未登录",
         )
 
+    return get_session_account(
+    db,
+    session_id,
+    allow_password_change=False,
+)
+
+
+def current_user(account: Account = Depends(current_account)) -> CurrentUser:
+    return CurrentUser(
+        role=account.role.value,
+        subject_id=account.subject_id,
+    )
+
+def current_user_for_password_change(
+    session_id: str | None = Cookie(default=None),
+    db: Session = Depends(get_db),
+) -> CurrentUser:
+    if session_id is None:
+        raise HTTPException(status_code=401, detail="未登录")
+
     account = get_session_account(
         db,
         session_id,
+        allow_password_change=True,
     )
 
     return CurrentUser(

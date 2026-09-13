@@ -35,16 +35,13 @@ document.getElementById("login-form").addEventListener("submit", async (e) => {
         password: document.getElementById("password").value
       })
     });
-    localStorage.setItem("token", res.access_token);
-    localStorage.setItem("role", res.role);
-
     if (res.is_first_login) {
       SECD.showToast("首次登录，需修改初始密码", "warning");
       setTimeout(() => window.location.href = "/change-password?first=true", 800);
       return;
     }
     SECD.showToast("登录成功", "success");
-    const redirectMap = { student: "/student/courses", teacher: "/teacher/claim", admin: "/admin/users" };
+    const redirectMap = { student: "/student/courses", teacher: "/teacher/claim", registrar: "/admin/users" };
     setTimeout(() => window.location.href = redirectMap[res.role] || "/", 600);
   } catch (err) {
     // 错误信息已由 app.js 统一 Toast 提示

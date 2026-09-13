@@ -2,9 +2,12 @@ const SECD = (() => {
   let pollingTimers = [];
 
   const getHeaders = () => {
-    const token = localStorage.getItem("token");
     const headers = { "Content-Type": "application/json" };
-    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const csrfToken = document.cookie
+      .split("; ")
+      .find((row) => row.startsWith("csrf_token="))
+      ?.split("=")[1];
+    if (csrfToken) headers["X-CSRF-Token"] = decodeURIComponent(csrfToken);
     return headers;
   };
 

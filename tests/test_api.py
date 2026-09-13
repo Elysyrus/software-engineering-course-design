@@ -9,10 +9,10 @@ def test_health_endpoint():
     assert response.json() == {"status": "ok"}
 
 
-def test_business_endpoint_requires_development_identity():
+def test_business_endpoint_requires_authenticated_session():
     response = TestClient(app).post(
         "/semesters/1/schedule/submit", json={"expected_version": 1}
     )
     assert response.status_code == 401
-    assert "X-Role" in response.json()["detail"]
+    assert response.json()["detail"] == "未登录"
 
