@@ -14,7 +14,6 @@
       <option value="">全部角色</option>
       <option value="student">仅学生</option>
       <option value="teacher">仅教师</option>
-      <option value="admin">仅教务管理员</option>
     </select>
   </div>
 
@@ -41,10 +40,9 @@
   <div class="modal">
     <h3 style="margin-bottom: 1rem;">新建师生账号</h3>
     <form id="create-user-form">
-      <div class="form-group">
-        <label class="form-label">学号 / 工号 (登录账号)</label>
-        <input type="text" id="m-username" class="form-input" required>
-      </div>
+      <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0;">
+        学号或工号由系统按年份自动分配。
+      </p>
       <div class="form-group">
         <label class="form-label">真实姓名</label>
         <input type="text" id="m-fullname" class="form-input" required>
@@ -54,7 +52,6 @@
         <select id="m-role" class="form-select" required>
           <option value="student">学生 (student)</option>
           <option value="teacher">教师 (teacher)</option>
-          <option value="admin">教务管理员 (admin)</option>
         </select>
       </div>
       <div class="form-group">
@@ -108,10 +105,12 @@ function renderUsers(list) {
       <td>${u.department || '-'}</td>
       <td>${u.is_active ? '<span style="color:var(--success)">正常</span>' : '<span style="color:var(--danger)">已停用</span>'}</td>
       <td>
+        <button class="btn btn-sm btn-outline" onclick="editUser(${u.id})">编辑资料</button>
         <button class="btn btn-sm btn-outline" onclick="resetUserPassword(${u.id}, '${u.username}')">重置密码</button>
         <button class="btn btn-sm ${u.is_active ? 'btn-danger' : 'btn-secondary'}" onclick="toggleUserStatus(${u.id},${u.is_active})">
           ${u.is_active ? '停用' : '启用'}
         </button>
+        <button class="btn btn-sm btn-danger" onclick="deleteUser(${u.id}, '${u.username}')">删除人员</button>
       </td>
     </tr>
   `).join("");
@@ -123,14 +122,13 @@ function closeCreateModal() { document.getElementById("user-form-modal").classLi
 document.getElementById("create-user-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const payload = {
-    username: document.getElementById("m-username").value.trim(),
     full_name: document.getElementById("m-fullname").value.trim(),
     role: document.getElementById("m-role").value,
     department: document.getElementById("m-dept").value.trim()
   };
   try {
-    await SECD.request("/api/v1/admin/users", { method: "POST", body: JSON.stringify(payload) });
-    SECD.showToast("账号创建成功，默认初始密码已生成");
+    const created = await SECD.request("/api/v1/admin/users", { method: "POST", body: JSON.stringify(payload) });
+    SECD.showToast(`账号创建成功，登录编号：${created.login_number}`);
     closeCreateModal();
     loadUsers();
   } catch (err) {}
@@ -142,6 +140,48 @@ async function resetUserPassword(userId, username) {
   try {
     await SECD.request(`/api/v1/admin/users/${userId}/reset-password`, { method: "POST" });
     SECD.showToast(`用户 ${username} 的密码已成功重置！首次登录须强制改密。`);
+  } catch (err) {}
+}
+
+async function editUser(userId) {
+  const user = allUsers.find(item => item.id === userId);
+  if (!user) return;
+
+  const fullName = window.prompt("请输入真实姓名：", user.full_name);
+  if (fullName === null) return;
+  if (!fullName.trim()) {
+    SECD.showToast("姓名不能为空", "error");
+    return;
+  }
+
+  const payload = { full_name: fullName.trim() };
+  if (user.role === "teacher") {
+    const department = window.prompt("请输入院系或部门：", user.department || "");
+    if (department === null) return;
+    payload.department = department.trim();
+  }
+
+  try {
+    await SECD.request(`/api/v1/admin/users/${userId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload)
+    });
+    SECD.showToast("人员资料已更新");
+    loadUsers();
+  } catch (err) {}
+}
+
+async function deleteUser(userId, username) {
+  const ok = await SECD.confirmAction(
+    `确定删除人员 ${username} 吗？若已有业务记录，系统会保留历史并停用账号。`
+  );
+  if (!ok) return;
+  try {
+    const result = await SECD.request(`/api/v1/admin/users/${userId}`, {
+      method: "DELETE"
+    });
+    SECD.showToast(result.message);
+    loadUsers();
   } catch (err) {}
 }
 

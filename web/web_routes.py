@@ -1,9 +1,10 @@
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -16,7 +17,17 @@ from app.auth_contract import (
     require_teacher,
 )
 from app.database import get_db
-from app.models import ServerSession, Student, Teacher
+from app.models import Account, AccountRole, ServerSession, Student, Teacher
+from app.services.personnel import (
+    create_student,
+    create_teacher,
+    delete_user_for_registrar,
+    get_user_for_registrar,
+    list_users_for_registrar,
+    reset_account_password,
+    set_account_status,
+    update_user_for_registrar,
+)
 from app.services.auth import (
     authenticate_user,
     change_password,
@@ -141,12 +152,21 @@ class SubmitGradesReq(BaseModel):
     grades: List[GradeItem]
 
 class CreateUserReq(BaseModel):
-    username: str
-    full_name: str
-    role: str
-    department: Optional[str] = None
+    full_name: str = Field(min_length=1, max_length=100)
+    role: Literal["student", "teacher"]
+    department: str | None = Field(default=None, max_length=100)
+
+
+class UpdateUserReq(BaseModel):
+    full_name: str | None = Field(default=None, min_length=1, max_length=100)
+    department: str | None = Field(default=None, max_length=100)
+
+
+class AccountStatusReq(BaseModel):
+    is_active: bool
 
 class CloseReq(BaseModel):
+
     confirmation: str
 
 MOCK_STATE = {
@@ -165,6 +185,20 @@ def _set_auth_cookies(response: Response, session: ServerSession) -> None:
     secure = get_settings().app_env != "development"
     response.set_cookie("session_id", session.id, httponly=True, samesite="lax", secure=secure)
     response.set_cookie("csrf_token", session.csrf_token, httponly=False, samesite="lax", secure=secure)
+
+
+def _validate_request_csrf(db: Session, request: Request) -> None:
+    session_id = request.cookies.get("session_id")
+    session = db.get(ServerSession, session_id) if session_id is not None else None
+    if session is None:
+        raise HTTPException(status_code=401, detail="登录状态无效")
+    validate_csrf(session, request.headers.get("X-CSRF-Token"))
+
+
+def _personnel_http_error(error: ValueError) -> None:
+    message = str(error)
+    status_code = 404 if "不存在" in message else 422
+    raise HTTPException(status_code=status_code, detail=message)
 
 
 @web_router.post("/api/v1/auth/login")
@@ -307,24 +341,131 @@ async def api_submit_grades(section_id: int, req: SubmitGradesReq):
     return {"message": f"成功保存 {len(req.grades)} 条学生成绩"}
 
 @web_router.get("/api/v1/admin/users")
-async def api_get_users():
-    return [
-        {"id": 1, "username": "2024001", "full_name": "张三", "role": "student", "department": "软件学院", "is_active": True},
-        {"id": 2, "username": "T1001", "full_name": "李老师", "role": "teacher", "department": "计算机系", "is_active": True},
-        {"id": 3, "username": "admin", "full_name": "教务管理员", "role": "admin", "department": "教务处", "is_active": True}
-    ]
+async def api_get_users(
+    _registrar_id: int = Depends(require_registrar),
+    db: Session = Depends(get_db),
+):
+    return list_users_for_registrar(db)
 
-@web_router.post("/api/v1/admin/users")
-async def api_create_user(req: CreateUserReq):
-    return {"message": "用户创建成功", "default_password": "InitialPassword123"}
 
-@web_router.post("/api/v1/admin/users/{user_id}/reset-password")
-async def api_reset_password(user_id: int):
-    return {"message": "密码重置完成，初始密码为 123456"}
 
-@web_router.patch("/api/v1/admin/users/{user_id}/status")
-async def api_toggle_status(user_id: int):
-    return {"message": "状态切换成功"}
+### 教务创建学生或教师账号
+@web_router.post("/api/v1/admin/users", status_code=201)
+async def api_create_user(
+    req: CreateUserReq,
+    request: Request,
+    _registrar_id: int = Depends(require_registrar),
+    db: Session = Depends(get_db),
+):
+    """教务创建师生资料与账号；登录编号始终由后端分配。"""
+    _validate_request_csrf(db, request)
+
+    if req.role == "student":
+        student = create_student(db, req.full_name, "Initial123")
+        account_id = db.scalar(
+            select(Account.id).where(
+                Account.role == AccountRole.STUDENT,
+                Account.subject_id == student.id,
+            )
+        )
+        return {
+            "id": account_id,
+            "login_number": student.student_number,
+            "role": "student",
+            "message": "学生账号创建成功",
+        }
+
+    if not req.department or not req.department.strip():
+        raise HTTPException(status_code=422, detail="教师必须填写院系")
+    teacher = create_teacher(db, req.full_name, req.department.strip(), "Initial123")
+    account_id = db.scalar(
+        select(Account.id).where(
+            Account.role == AccountRole.TEACHER,
+            Account.subject_id == teacher.id,
+        )
+    )
+    return {
+        "id": account_id,
+        "login_number": teacher.teacher_number,
+        "role": "teacher",
+        "message": "教师账号创建成功",
+    }
+
+@web_router.get("/api/v1/admin/users/{account_id}")
+async def api_get_user(
+    account_id: int,
+    _registrar_id: int = Depends(require_registrar),
+    db: Session = Depends(get_db),
+):
+    try:
+        return get_user_for_registrar(db, account_id)
+    except ValueError as error:
+        _personnel_http_error(error)
+
+
+@web_router.patch("/api/v1/admin/users/{account_id}")
+async def api_update_user(
+    account_id: int,
+    req: UpdateUserReq,
+    request: Request,
+    _registrar_id: int = Depends(require_registrar),
+    db: Session = Depends(get_db),
+):
+    _validate_request_csrf(db, request)
+    try:
+        return update_user_for_registrar(
+            db,
+            account_id,
+            full_name=req.full_name,
+            department=req.department,
+        )
+    except ValueError as error:
+        _personnel_http_error(error)
+
+
+@web_router.delete("/api/v1/admin/users/{account_id}")
+async def api_delete_user(
+    account_id: int,
+    request: Request,
+    _registrar_id: int = Depends(require_registrar),
+    db: Session = Depends(get_db),
+):
+    _validate_request_csrf(db, request)
+    try:
+        action = delete_user_for_registrar(db, account_id)
+    except ValueError as error:
+        _personnel_http_error(error)
+    return {"action": action, "message": "人员已删除" if action == "deleted" else "人员已停用"}
+
+
+@web_router.post("/api/v1/admin/users/{account_id}/reset-password")
+async def api_reset_password(
+    account_id: int,
+    request: Request,
+    _registrar_id: int = Depends(require_registrar),
+    db: Session = Depends(get_db),
+):
+    _validate_request_csrf(db, request)
+    try:
+        reset_account_password(db, account_id, "Initial123")
+    except ValueError as error:
+        _personnel_http_error(error)
+    return {"message": "密码已重置，用户下次登录必须修改密码"}
+
+
+@web_router.patch("/api/v1/admin/users/{account_id}/status")
+async def api_set_user_status(
+    account_id: int,
+    req: AccountStatusReq,
+    request: Request,
+    _registrar_id: int = Depends(require_registrar),
+    db: Session = Depends(get_db),
+):
+    _validate_request_csrf(db, request)
+    try:
+        return set_account_status(db, account_id, req.is_active)
+    except ValueError as error:
+        _personnel_http_error(error)
 
 @web_router.post("/api/v1/admin/registration/close")
 async def api_close_registration(req: CloseReq):
