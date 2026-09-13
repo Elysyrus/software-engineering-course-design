@@ -53,6 +53,13 @@ class GradeValue(str, enum.Enum):
     F = "F"
     I = "I"
 
+################################################################################
+### updated on 9.13 AccountRole for Account.role
+class AccountRole(str, enum.Enum):
+    STUDENT = "student"
+    TEACHER = "teacher"
+    REGISTRAR = "registrar"
+################################################################################
 
 class Student(Base):
     __tablename__ = "students"
@@ -71,7 +78,36 @@ class Teacher(Base):
     name: Mapped[str] = mapped_column(String(100))
     department: Mapped[str] = mapped_column(String(100), default="")
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+################################################################################
+### updated on 9.13  create Table accounts & table serversessions by sjy
 
+class Account(Base):
+    __tablename__ = "accounts"
+
+    id:Mapped[int]=mapped_column(primary_key=True)
+    login_number:Mapped[str]=mapped_column(String(32),unique=True)
+    role: Mapped[AccountRole]=mapped_column( Enum(AccountRole),)
+    subject_id: Mapped[int | None]=mapped_column(Integer)
+    must_change_password: Mapped[bool] = mapped_column(Boolean,default=True)
+    password_hash:Mapped[str] = mapped_column(String(255))
+    active: Mapped[bool] = mapped_column(Boolean,default=True)
+
+    created_at: Mapped[datetime] = mapped_column( DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),
+    default=lambda: datetime.now(UTC),
+    onupdate=lambda: datetime.now(UTC)
+    )
+    
+class ServerSession(Base):
+        __tablename__ = "server_sessions"
+
+        id: Mapped[str] = mapped_column(String(128),primary_key=True)
+        account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
+        csrf_token: Mapped[str] = mapped_column(String(128))
+        created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+        expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+        revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+################################################################################
 
 class Semester(Base):
     __tablename__ = "semesters"
