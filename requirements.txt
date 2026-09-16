@@ -6,3 +6,5 @@ pymysql==1.1.2
 pydantic-settings==2.10.1
 pytest==8.4.2
 httpx==0.28.1
+argon2-cffi==25.1.0
+Jinja2==3.1.6

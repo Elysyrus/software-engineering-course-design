@@ -12,6 +12,7 @@ Thumbs.db
 # Python local environment and caches
 .venv/
 __pycache__/
+*.py[cod]
 .pytest_cache/
 *.db
 tmp/
