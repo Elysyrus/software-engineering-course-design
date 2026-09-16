@@ -6,17 +6,21 @@
 
 from __future__ import annotations
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.errors import BusinessError
 from app.models import (
     Course,
     Enrollment,
+    Grade,
+    GradeChange,
+    GradeValue,
     Offering,
     OfferingStatus,
     Schedule,
     Semester,
+    SemesterStatus,
     Student,
     Teacher,
     TeacherQualification,
@@ -161,15 +165,9 @@ def get_offering_roster(db: Session, *, teacher_id: int, offering_id: int) -> di
 
     只统计已提交且未删除方案中的选课记录：草稿被删除或被退回的方案不进名单。
     """
-    _get_teacher(db, teacher_id)
-    offering = db.get(Offering, offering_id)
-    if offering is None:
-        raise BusinessError("班次不存在", 404)
-    if offering.teacher_id != teacher_id:
-        raise BusinessError("只能查看自己承担班次的名单", 403)
-
+    offering = _require_own_offering(db, teacher_id=teacher_id, offering_id=offering_id)
     rows = db.execute(
-        select(Student.student_number, Student.name, Enrollment.enrolled_at)
+        select(Student.id, Student.student_number, Student.name, Enrollment.enrolled_at)
         .join(Schedule, Schedule.student_id == Student.id)
         .join(Enrollment, Enrollment.schedule_id == Schedule.id)
         .where(
@@ -185,9 +183,182 @@ def get_offering_roster(db: Session, *, teacher_id: int, offering_id: int) -> di
             offering, teacher_id=teacher_id, enrolled_count=counts.get(offering.id, 0)
         ),
         "students": [
-            {"student_number": student_number, "name": name, "enrolled_at": enrolled_at}
-            for student_number, name, enrolled_at in rows
+            {
+                "student_id": student_id,
+                "student_number": student_number,
+                "name": name,
+                "enrolled_at": enrolled_at,
+            }
+            for student_id, student_number, name, enrolled_at in rows
         ],
+    }
+
+
+def _require_own_offering(db: Session, *, teacher_id: int, offering_id: int) -> Offering:
+    """班次存在性、教师存在性与授课归属的统一校验。"""
+    _get_teacher(db, teacher_id)
+    offering = db.get(Offering, offering_id)
+    if offering is None:
+        raise BusinessError("班次不存在", 404)
+    if offering.teacher_id != teacher_id:
+        raise BusinessError("只能访问自己承担班次的数据", 403)
+    return offering
+
+
+def require_completed_semester(semester: Semester) -> None:
+    """成绩只录入已完成学期；与选课入口的"学期开放"判断正好相反。"""
+    if semester.status != SemesterStatus.CLOSED:
+        raise BusinessError("只能录入已完成学期的成绩")
+
+
+def _formal_students(db: Session, offering: Offering) -> dict[int, str]:
+    rows = db.execute(
+        select(Student.id, Student.student_number)
+        .join(Schedule, Schedule.student_id == Student.id)
+        .join(Enrollment, Enrollment.schedule_id == Schedule.id)
+        .where(
+            Enrollment.offering_id == offering.id,
+            Schedule.has_submitted.is_(True),
+            Schedule.is_deleted.is_(False),
+        )
+    ).all()
+    return {student_id: student_number for student_id, student_number in rows}
+
+
+def list_offering_grades(db: Session, *, teacher_id: int, offering_id: int) -> dict:
+    """班次成绩单：正式学生名单与当前成绩，供录入页面展示。"""
+    offering = _require_own_offering(db, teacher_id=teacher_id, offering_id=offering_id)
+    rows = db.execute(
+        select(
+            Student.id,
+            Student.student_number,
+            Student.name,
+            Grade.value,
+        )
+        .join(Schedule, Schedule.student_id == Student.id)
+        .join(Enrollment, Enrollment.schedule_id == Schedule.id)
+        .outerjoin(
+            Grade,
+            and_(Grade.student_id == Student.id, Grade.offering_id == offering.id),
+        )
+        .where(
+            Enrollment.offering_id == offering.id,
+            Schedule.has_submitted.is_(True),
+            Schedule.is_deleted.is_(False),
+        )
+        .order_by(Student.student_number)
+    ).all()
+    semester = _get_semester(db, offering.semester_id)
+    counts = _enrolled_counts(db, [offering.id])
+    return {
+        "offering": offering_view(
+            offering, teacher_id=teacher_id, enrolled_count=counts.get(offering.id, 0)
+        ),
+        "semester_status": semester.status.value,
+        "editable": semester.status == SemesterStatus.CLOSED,
+        "students": [
+            {
+                "student_id": student_id,
+                "student_number": student_number,
+                "name": name,
+                "value": value.value if value is not None else None,
+            }
+            for student_id, student_number, name, value in rows
+        ],
+    }
+
+
+def _normalize_grade(raw_value: object) -> GradeValue | None:
+    """空字符串与 None 都表示留空；其余必须是 A-F/I 之一。"""
+    if raw_value is None:
+        return None
+    if isinstance(raw_value, str):
+        raw_value = raw_value.strip()
+        if raw_value == "":
+            return None
+    allowed = {value.value for value in GradeValue}
+    if raw_value not in allowed:
+        raise BusinessError(f"成绩 {raw_value} 不是允许的取值", 422)
+    return GradeValue(raw_value)
+
+
+def save_offering_grades(
+    db: Session, *, teacher_id: int, offering_id: int, entries: list[dict]
+) -> dict:
+    """录入、修改或留空本班次学生成绩，并为每处变化写入变更记录。
+
+    先整批校验再写入：任何一条不合法都不会留下半完成数据。
+    重复提交相同成绩视为幂等，不产生多余的变更记录。
+    """
+    offering = db.get(Offering, offering_id)
+    if offering is None:
+        raise BusinessError("班次不存在", 404)
+
+    require_completed_semester(lock_semester(db, offering.semester_id))
+    teacher = _lock_teacher(db, teacher_id)
+    offering = _locked_offering(db, offering_id)
+    if offering.teacher_id != teacher.id:
+        raise BusinessError("只能录入自己承担班次的学生成绩", 403)
+
+    roster = _formal_students(db, offering)
+    parsed: list[tuple[int, GradeValue | None]] = []
+    seen: set[int] = set()
+    for entry in entries:
+        student_id = entry["student_id"]
+        if student_id in seen:
+            raise BusinessError("同一学生只能提交一条成绩", 422)
+        seen.add(student_id)
+        if student_id not in roster:
+            raise BusinessError("只能为本班次正式选上的学生录入成绩", 403)
+        parsed.append((student_id, _normalize_grade(entry.get("value"))))
+
+    changes: list[dict] = []
+    unchanged = 0
+    for student_id, value in parsed:
+        grade = db.scalar(
+            select(Grade)
+            .where(Grade.student_id == student_id, Grade.offering_id == offering.id)
+            .with_for_update()
+        )
+        if grade is None:
+            if value is None:
+                # 从未录入且仍然留空，不留下无意义的变更记录
+                unchanged += 1
+                continue
+            db.add(Grade(student_id=student_id, offering_id=offering.id, value=value))
+            db.flush()
+            previous = None
+        else:
+            if grade.value == value:
+                unchanged += 1
+                continue
+            previous = grade.value
+            grade.value = value
+
+        db.add(
+            GradeChange(
+                student_id=student_id,
+                offering_id=offering.id,
+                previous_value=previous,
+                new_value=value,
+                changed_by_teacher_id=teacher.id,
+            )
+        )
+        changes.append(
+            {
+                "student_id": student_id,
+                "student_number": roster[student_id],
+                "previous_value": previous.value if previous is not None else None,
+                "new_value": value.value if value is not None else None,
+            }
+        )
+
+    db.commit()
+    return {
+        "offering_id": offering.id,
+        "updated": len(changes),
+        "unchanged": unchanged,
+        "changes": changes,
     }
 
 
