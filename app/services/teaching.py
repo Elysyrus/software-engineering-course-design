@@ -26,7 +26,9 @@ from app.models import (
     TeacherQualification,
 )
 from app.services.registration import (
+    PASSING_GRADES,
     lock_semester,
+    passed_course_ids,
     require_open_semester,
     slots_conflict,
 )
@@ -360,6 +362,94 @@ def save_offering_grades(
         "unchanged": unchanged,
         "changes": changes,
     }
+
+
+def latest_completed_semester(db: Session) -> Semester | None:
+    """最近一个已完成学期；学生成绩页与教师录入入口都用它作为默认学期。"""
+    return db.scalar(
+        select(Semester)
+        .where(Semester.status == SemesterStatus.CLOSED)
+        .order_by(Semester.ends_on.desc(), Semester.id.desc())
+        .limit(1)
+    )
+
+
+def list_student_grades(
+    db: Session, *, student_id: int, semester_id: int | None = None
+) -> dict:
+    """学生查看自己的成绩；不传学期时返回全部已有成绩。"""
+    student = db.get(Student, student_id)
+    if student is None:
+        raise BusinessError("学生不存在", 404)
+    if semester_id is not None:
+        _get_semester(db, semester_id)
+
+    stmt = (
+        select(
+            Semester.id,
+            Semester.code,
+            Course.id,
+            Course.code,
+            Course.name,
+            Offering.id,
+            Offering.section_number,
+            Grade.value,
+        )
+        .select_from(Grade)
+        .join(Offering, Offering.id == Grade.offering_id)
+        .join(Course, Course.id == Offering.course_id)
+        .join(Semester, Semester.id == Offering.semester_id)
+        .where(Grade.student_id == student.id)
+        .order_by(Semester.ends_on.desc(), Course.code)
+    )
+    if semester_id is not None:
+        stmt = stmt.where(Offering.semester_id == semester_id)
+
+    grades = [
+        {
+            "semester_id": semester_row_id,
+            "semester_code": semester_code,
+            "course_id": course_id,
+            "course_code": course_code,
+            "course_name": course_name,
+            "offering_id": offering_id,
+            "section_number": section_number,
+            "value": value.value if value is not None else None,
+            "passed": value in PASSING_GRADES,
+        }
+        for (
+            semester_row_id,
+            semester_code,
+            course_id,
+            course_code,
+            course_name,
+            offering_id,
+            section_number,
+            value,
+        ) in db.execute(stmt).all()
+    ]
+    return {
+        "student_id": student.id,
+        "student_number": student.student_number,
+        "semester_id": semester_id,
+        "grades": grades,
+    }
+
+
+def completed_course_ids(db: Session, *, student_id: int, before_semester_id: int) -> set[int]:
+    """先修检查约定：取该学期开始前已完成的学期中，当前有效的通过成绩课程。
+
+    与成员 1 的选课事务共用同一实现，避免先修口径出现第二个版本。
+    """
+    semester = _get_semester(db, before_semester_id)
+    return passed_course_ids(db, student_id=student_id, semester=semester)
+
+
+def has_passed_course(db: Session, *, student_id: int, course_id: int, before_semester_id: int) -> bool:
+    """单个先修条件的判断入口，供先修检查与页面提示复用。"""
+    return course_id in completed_course_ids(
+        db, student_id=student_id, before_semester_id=before_semester_id
+    )
 
 
 def _lock_teacher(db: Session, teacher_id: int) -> Teacher:

@@ -576,3 +576,5 @@ def close_registration(db: Session, *, semester_id: int) -> tuple[list[int], int
 lock_semester = _lock_semester
 require_open_semester = _require_open
 slots_conflict = _slots_conflict
+# 先修检查只读取当前有效成绩，成员 4 的成绩查询沿用同一实现
+passed_course_ids = _passed_course_ids
