@@ -19,6 +19,11 @@ from app.models import (
     Teacher,
     TeacherQualification,
 )
+from app.services.registration import (
+    lock_semester,
+    require_open_semester,
+    slots_conflict,
+)
 
 
 def _get_teacher(db: Session, teacher_id: int) -> Teacher:
@@ -70,7 +75,8 @@ def _enrolled_counts(db: Session, offering_ids: list[int]) -> dict[int, int]:
     return {offering_id: count for offering_id, count in rows}
 
 
-def _offering_view(offering: Offering, *, teacher_id: int, enrolled_count: int) -> dict:
+def offering_view(offering: Offering, *, teacher_id: int, enrolled_count: int) -> dict:
+    """班次对外视图；接口层与查询服务共用同一份字段定义。"""
     return {
         "offering_id": offering.id,
         "semester_id": offering.semester_id,
@@ -118,7 +124,7 @@ def list_claimable_offerings(db: Session, *, teacher_id: int, semester_id: int) 
     offerings = list(db.scalars(stmt).all())
     counts = _enrolled_counts(db, [offering.id for offering in offerings])
     return [
-        _offering_view(
+        offering_view(
             offering, teacher_id=teacher_id, enrolled_count=counts.get(offering.id, 0)
         )
         for offering in offerings
@@ -141,8 +147,102 @@ def list_my_offerings(
     offerings = list(db.scalars(stmt).all())
     counts = _enrolled_counts(db, [offering.id for offering in offerings])
     return [
-        _offering_view(
+        offering_view(
             offering, teacher_id=teacher_id, enrolled_count=counts.get(offering.id, 0)
         )
         for offering in offerings
     ]
+
+
+def _lock_teacher(db: Session, teacher_id: int) -> Teacher:
+    """按「学期 → 业务主体 → 班次」的顺序锁定教师记录。
+
+    同一教师的并发认领由该行锁串行化，所以不必再锁定他名下的其他班次。
+    """
+    teacher = db.get(Teacher, teacher_id, with_for_update=True)
+    if teacher is None:
+        raise BusinessError("教师不存在", 404)
+    if not teacher.active:
+        raise BusinessError("教师档案已停用", 403)
+    return teacher
+
+
+def _locked_offering(db: Session, offering_id: int) -> Offering:
+    offering = db.scalar(
+        select(Offering).where(Offering.id == offering_id).with_for_update()
+    )
+    if offering is None:
+        raise BusinessError("班次不存在", 404)
+    return offering
+
+
+def _conflicting_offering(
+    db: Session, *, teacher_id: int, offering: Offering
+) -> Offering | None:
+    """同一学期内，该教师已承担且与本班次上课时间重叠的班次。"""
+    others = db.scalars(
+        select(Offering)
+        .where(
+            Offering.teacher_id == teacher_id,
+            Offering.semester_id == offering.semester_id,
+            Offering.id != offering.id,
+            Offering.status == OfferingStatus.OPEN,
+        )
+        .options(selectinload(Offering.slots))
+    ).all()
+    for other in others:
+        if slots_conflict(offering, other):
+            return other
+    return None
+
+
+def claim_offering(db: Session, *, teacher_id: int, offering_id: int) -> Offering:
+    """认领授课：校验学期开放、教师资格、班次归属与本人授课时间冲突。
+
+    重复认领自己已承担的班次按幂等处理，不报错也不改变数据。
+    """
+    offering = db.get(Offering, offering_id)
+    if offering is None:
+        raise BusinessError("班次不存在", 404)
+
+    require_open_semester(lock_semester(db, offering.semester_id))
+    teacher = _lock_teacher(db, teacher_id)
+    offering = _locked_offering(db, offering_id)
+
+    if offering.teacher_id == teacher.id:
+        db.commit()
+        return offering
+    if offering.teacher_id is not None:
+        raise BusinessError("该班次已被其他教师认领")
+    if offering.status != OfferingStatus.OPEN:
+        raise BusinessError("班次已取消，不能认领")
+    if offering.course_id not in qualified_course_ids(db, teacher_id=teacher.id):
+        raise BusinessError("不具备该课程的授课资格", 403)
+
+    conflicting = _conflicting_offering(db, teacher_id=teacher.id, offering=offering)
+    if conflicting is not None:
+        raise BusinessError(f"与已承担班次 {conflicting.id} 上课时间冲突")
+
+    offering.teacher_id = teacher.id
+    db.commit()
+    return offering
+
+
+def release_offering(db: Session, *, teacher_id: int, offering_id: int) -> Offering:
+    """取消授课：只能取消自己承担的班次，且要求学期仍在开放状态。"""
+    offering = db.get(Offering, offering_id)
+    if offering is None:
+        raise BusinessError("班次不存在", 404)
+
+    require_open_semester(lock_semester(db, offering.semester_id))
+    teacher = _lock_teacher(db, teacher_id)
+    offering = _locked_offering(db, offering_id)
+
+    if offering.teacher_id is None:
+        raise BusinessError("该班次当前无人承担", 403)
+    if offering.teacher_id != teacher.id:
+        raise BusinessError("只能取消自己承担的班次", 403)
+
+    offering.teacher_id = None
+    db.commit()
+    return offering
