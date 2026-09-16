@@ -15,7 +15,9 @@ from app.models import (
     Enrollment,
     Offering,
     OfferingStatus,
+    Schedule,
     Semester,
+    Student,
     Teacher,
     TeacherQualification,
 )
@@ -152,6 +154,41 @@ def list_my_offerings(
         )
         for offering in offerings
     ]
+
+
+def get_offering_roster(db: Session, *, teacher_id: int, offering_id: int) -> dict:
+    """所教班次的正式学生名单。
+
+    只统计已提交且未删除方案中的选课记录：草稿被删除或被退回的方案不进名单。
+    """
+    _get_teacher(db, teacher_id)
+    offering = db.get(Offering, offering_id)
+    if offering is None:
+        raise BusinessError("班次不存在", 404)
+    if offering.teacher_id != teacher_id:
+        raise BusinessError("只能查看自己承担班次的名单", 403)
+
+    rows = db.execute(
+        select(Student.student_number, Student.name, Enrollment.enrolled_at)
+        .join(Schedule, Schedule.student_id == Student.id)
+        .join(Enrollment, Enrollment.schedule_id == Schedule.id)
+        .where(
+            Enrollment.offering_id == offering.id,
+            Schedule.has_submitted.is_(True),
+            Schedule.is_deleted.is_(False),
+        )
+        .order_by(Student.student_number)
+    ).all()
+    counts = _enrolled_counts(db, [offering.id])
+    return {
+        "offering": offering_view(
+            offering, teacher_id=teacher_id, enrolled_count=counts.get(offering.id, 0)
+        ),
+        "students": [
+            {"student_number": student_number, "name": name, "enrolled_at": enrolled_at}
+            for student_number, name, enrolled_at in rows
+        ],
+    }
 
 
 def _lock_teacher(db: Session, teacher_id: int) -> Teacher:
