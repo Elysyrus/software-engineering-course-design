@@ -37,7 +37,8 @@ let currentRosterList = [];
 
 async function loadTeacherSections() {
   try {
-    const sections = await SECD.request("/api/v1/teacher/my-sections");
+    const response = await SECD.request("/api/v1/teacher/my-sections");
+    const sections = (response && response.offerings) || [];
     const sel = document.getElementById("section-selector");
     sel.innerHTML = `<option value="">-- 请选择任教班次 --</option>` + sections.map(s => `
       <option value="${s.id}">#${s.id} - ${s.course_code}${s.course_name}</option>
@@ -53,7 +54,7 @@ async function loadRoster(sectionId) {
   if (!sectionId) return;
   try {
     const data = await SECD.request(`/api/v1/teacher/sections/${sectionId}/roster`);
-    currentRosterList = data || [];
+    currentRosterList = (data && data.students) || [];
     const tbody = document.getElementById("roster-body");
     if (currentRosterList.length === 0) {
       tbody.innerHTML = `<tr><td colspan="4" class="empty-state">本教学班当前暂无选课成功的学生名单。</td></tr>`;

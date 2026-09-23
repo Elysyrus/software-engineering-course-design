@@ -35,12 +35,13 @@
 async function loadClaimSections() {
   try {
     const data = await SECD.request("/api/v1/teacher/claimable-sections");
+    const offerings = (data && data.offerings) || [];
     const tbody = document.getElementById("claim-body");
-    if (!data || data.length === 0) {
+    if (offerings.length === 0) {
       tbody.innerHTML = `<tr><td colspan="8" class="empty-state">暂无可认领的教学班次。</td></tr>`;
       return;
     }
-    tbody.innerHTML = data.map(sec => `
+    tbody.innerHTML = offerings.map(sec => `
       <tr>
         <td>#${sec.id}</td>
         <td><strong>${sec.course_code}</strong> -${sec.course_name}</td>

@@ -39,7 +39,8 @@ let activeSectionId = null;
 
 async function loadGradingSections() {
   try {
-    const sections = await SECD.request("/api/v1/teacher/my-sections");
+    const response = await SECD.request("/api/v1/teacher/my-sections");
+    const sections = (response && response.offerings) || [];
     const sel = document.getElementById("grade-section-selector");
     sel.innerHTML = `<option value="">-- 选择班次录入成绩 --</option>` + sections.map(s => `
       <option value="${s.id}">#${s.id} -${s.course_name}</option>
@@ -56,7 +57,10 @@ async function loadStudentsForGrading(sectionId) {
   activeSectionId = sectionId;
   try {
     const data = await SECD.request(`/api/v1/teacher/sections/${sectionId}/grades`);
-    currentGradingStudents = data || [];
+    currentGradingStudents = (data && data.students) || [];
+    if (data && data.editable === false) {
+      SECD.showToast("该班次所在学期尚未结束，成绩只能录入已完成学期。", "warning");
+    }
     const tbody = document.getElementById("grade-entry-body");
     if (currentGradingStudents.length === 0) {
       tbody.innerHTML = `<tr><td colspan="5" class="empty-state">该班级下无学生名单</td></tr>`;

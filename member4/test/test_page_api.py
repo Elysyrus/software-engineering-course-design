@@ -106,16 +106,18 @@ def test_claimable_sections_use_default_open_semester(db, seed_basic):
 
     assert response.status_code == 200
     body = response.json()
-    assert [item["course_code"] for item in body] == ["CS201"]
-    assert body[0]["id"] == seed_basic.offerings["algorithm"].id
-    assert body[0]["teacher_id"] is None
-    assert body[0]["is_mine"] is False
-    assert body[0]["capacity"] == 10
-    assert body[0]["schedule_time"] == "周一 1-2节"
-    assert Decimal(body[0]["fee"]) == Decimal("100.00")
+    offerings = body["offerings"]
+    assert body["semester_id"] == seed_basic.semester.id
+    assert [item["course_code"] for item in offerings] == ["CS201"]
+    assert offerings[0]["id"] == seed_basic.offerings["algorithm"].id
+    assert offerings[0]["teacher_id"] is None
+    assert offerings[0]["is_mine"] is False
+    assert offerings[0]["capacity"] == 10
+    assert offerings[0]["schedule_time"] == "周一 1-2节"
+    assert Decimal(offerings[0]["fee"]) == Decimal("100.00")
     # 学分与教室在真实模型里不存在，已从响应与页面中移除
-    assert "credits" not in body[0]
-    assert "classroom" not in body[0]
+    assert "credits" not in offerings[0]
+    assert "classroom" not in offerings[0]
 
 
 def test_my_sections_returns_real_offerings_with_semester(db, seed_basic):
@@ -127,11 +129,11 @@ def test_my_sections_returns_real_offerings_with_semester(db, seed_basic):
     )
 
     assert response.status_code == 200
-    body = response.json()
-    assert [item["id"] for item in body] == [seed_basic.offerings["database"].id]
-    assert body[0]["course_code"] == "CS202"
-    assert body[0]["semester_code"] == "2026-FALL"
-    assert body[0]["is_mine"] is True
+    offerings = response.json()["offerings"]
+    assert [item["id"] for item in offerings] == [seed_basic.offerings["database"].id]
+    assert offerings[0]["course_code"] == "CS202"
+    assert offerings[0]["semester_code"] == "2026-FALL"
+    assert offerings[0]["is_mine"] is True
 
 
 def test_claim_and_unclaim_page_endpoints(db, seed_basic):
@@ -175,9 +177,13 @@ def test_roster_page_endpoint_returns_real_students(db, seed_basic, completed_of
 
     assert response.status_code == 200
     body = response.json()
-    assert [item["student_number"] for item in body] == ["20260001", "20260002"]
-    assert body[0]["full_name"] == "学生1"
-    assert body[0]["enrolled_at"] is not None
+    assert body["offering_id"] == completed_offering.id
+    assert [item["student_number"] for item in body["students"]] == [
+        "20260001",
+        "20260002",
+    ]
+    assert body["students"][0]["full_name"] == "学生1"
+    assert body["students"][0]["enrolled_at"] is not None
 
 
 def test_grade_page_endpoint_accepts_letter_grades(db, seed_basic, completed_offering):
@@ -208,7 +214,10 @@ def test_grade_page_endpoint_accepts_letter_grades(db, seed_basic, completed_off
         f"/api/v1/teacher/sections/{completed_offering.id}/grades", cookies=cookies
     )
     assert sheet.status_code == 200
-    rows = sheet.json()
+    sheet_body = sheet.json()
+    assert sheet_body["offering_id"] == completed_offering.id
+    assert sheet_body["editable"] is True
+    rows = sheet_body["students"]
     assert [item["value"] for item in rows] == ["A", None]
     assert rows[0]["updated_by"] == "杨欣怡"
     assert rows[0]["updated_at"] is not None
@@ -282,6 +291,29 @@ def test_other_student_sees_own_empty_grade_list(db, seed_basic, completed_offer
 
     assert response.status_code == 200
     assert response.json()["items"] == []
+
+
+def test_page_endpoints_return_object_payloads(db, seed_basic, completed_offering):
+    """契约要求：页面接口根节点必须是 object，不能返回裸数组。"""
+    client = _client(db)
+    session = _teacher(db, seed_basic, "t1")
+    cookies = {"session_id": session.id}
+
+    for url in (
+        "/api/v1/semesters",
+        "/api/v1/teacher/claimable-sections",
+        "/api/v1/teacher/my-sections",
+        f"/api/v1/teacher/sections/{completed_offering.id}/roster",
+        f"/api/v1/teacher/sections/{completed_offering.id}/grades",
+    ):
+        response = client.get(url, cookies=cookies)
+        assert response.status_code == 200, url
+        assert isinstance(response.json(), dict), f"{url} 必须返回 object"
+
+    claimable = client.get(
+        "/api/v1/teacher/claimable-sections", cookies=cookies
+    ).json()
+    assert isinstance(claimable["offerings"], list)
 
 
 def test_real_pages_render_after_template_changes(db, seed_basic):

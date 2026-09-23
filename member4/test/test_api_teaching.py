@@ -151,8 +151,52 @@ def test_semester_list_uses_real_data(db, seed_basic):
     response = client.get("/api/v1/semesters", cookies={"session_id": session.id})
 
     assert response.status_code == 200
-    codes = {item["code"]: item["status"] for item in response.json()}
+    body = response.json()
+    assert isinstance(body, dict)
+    codes = {item["code"]: item["status"] for item in body["semesters"]}
     assert codes == {"2025-FALL": "closed", "2026-FALL": "open"}
+
+
+def test_claimable_offerings_default_to_open_semester(db, seed_basic):
+    """省略 semester_id 时应回落到当前开放学期，而不是返回 422。"""
+    client = _client(db)
+    session = _teacher_session(db, seed_basic, "t1")
+    cookies = {"session_id": session.id}
+
+    without_param = client.get("/api/v1/teacher/offerings/claimable", cookies=cookies)
+    with_param = client.get(
+        f"/api/v1/teacher/offerings/claimable?semester_id={seed_basic.semester.id}",
+        cookies=cookies,
+    )
+
+    assert without_param.status_code == 200
+    body = without_param.json()
+    assert body["semester_id"] == seed_basic.semester.id
+    assert body["offerings"] == with_param.json()["offerings"]
+
+
+def test_read_endpoints_accept_requests_without_query_parameters(db, seed_basic):
+    """查询类接口的过滤参数都应是可选的，避免调用方漏传就拿到 422。"""
+    client = _client(db)
+    teacher_cookies = {"session_id": _teacher_session(db, seed_basic, "t1").id}
+    student_cookies = {"session_id": _student_session(db, seed_basic).id}
+    registrar_session = _session(db, "registrar", AccountRole.REGISTRAR, 0)
+    registrar_cookies = {"session_id": registrar_session.id}
+
+    for url, cookies in (
+        ("/api/v1/semesters", teacher_cookies),
+        ("/api/v1/teacher/me/qualified-courses", teacher_cookies),
+        ("/api/v1/teacher/offerings/claimable", teacher_cookies),
+        ("/api/v1/teacher/offerings/mine", teacher_cookies),
+        ("/api/v1/teacher/claimable-sections", teacher_cookies),
+        ("/api/v1/teacher/my-sections", teacher_cookies),
+        ("/api/v1/student/me/grades", student_cookies),
+        ("/api/v1/student/grades", student_cookies),
+        ("/api/v1/registrar/billing/jobs", registrar_cookies),
+    ):
+        response = client.get(url, cookies=cookies)
+        assert response.status_code == 200, f"{url} -> {response.status_code}"
+        assert isinstance(response.json(), dict), f"{url} 必须返回 object"
 
 
 def test_teacher_reads_qualifications_and_claimable_offerings(db, seed_basic):

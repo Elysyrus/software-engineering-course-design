@@ -42,7 +42,11 @@ class SemesterItem(BaseModel):
     ends_on: str
 
 
-@router.get("/semesters", response_model=list[SemesterItem])
+class SemesterListResponse(BaseModel):
+    semesters: list[SemesterItem]
+
+
+@router.get("/semesters", response_model=SemesterListResponse)
 def list_semesters(
     _user=Depends(current_user), db: Session = Depends(get_db)
 ):
@@ -50,16 +54,18 @@ def list_semesters(
     semesters = db.scalars(
         select(Semester).order_by(Semester.starts_on.desc(), Semester.id.desc())
     ).all()
-    return [
-        SemesterItem(
-            semester_id=semester.id,
-            code=semester.code,
-            status=semester.status.value,
-            starts_on=semester.starts_on.isoformat(),
-            ends_on=semester.ends_on.isoformat(),
-        )
-        for semester in semesters
-    ]
+    return SemesterListResponse(
+        semesters=[
+            SemesterItem(
+                semester_id=semester.id,
+                code=semester.code,
+                status=semester.status.value,
+                starts_on=semester.starts_on.isoformat(),
+                ends_on=semester.ends_on.isoformat(),
+            )
+            for semester in semesters
+        ]
+    )
 
 
 @router.get("/teacher/me/qualified-courses")
@@ -83,14 +89,20 @@ def get_qualified_courses(
 
 @router.get("/teacher/offerings/claimable")
 def list_claimable_offerings(
-    semester_id: int = Query(..., ge=1),
+    semester_id: int | None = Query(
+        default=None, ge=1, description="学期 id；省略时使用当前开放学期"
+    ),
     teacher_id: int = Depends(require_teacher),
     db: Session = Depends(get_db),
 ):
-    """当前教师在本学期可认领的班次。"""
+    """当前教师可认领的班次；不传学期时使用当前开放学期。"""
+    target_semester_id = semester_id or _default_semester_id(db)
+    if target_semester_id is None:
+        return {"semester_id": None, "offerings": []}
     return {
+        "semester_id": target_semester_id,
         "offerings": teaching.list_claimable_offerings(
-            db, teacher_id=teacher_id, semester_id=semester_id
+            db, teacher_id=teacher_id, semester_id=target_semester_id
         )
     }
 
@@ -252,11 +264,13 @@ def page_claimable_sections(
     """教师教学任务认领页：可认领班次列表。"""
     target_semester_id = semester_id or _default_semester_id(db)
     if target_semester_id is None:
-        return []
+        return {"semester_id": None, "offerings": []}
     offerings = teaching.list_claimable_offerings(
         db, teacher_id=teacher_id, semester_id=target_semester_id
     )
-    return [
+    return {
+        "semester_id": target_semester_id,
+        "offerings": [
         {
             "id": item["offering_id"],
             "course_code": item["course_code"],
@@ -272,7 +286,8 @@ def page_claimable_sections(
             "status": item["status"],
         }
         for item in offerings
-    ]
+        ],
+    }
 
 
 @router.get("/teacher/my-sections")
@@ -282,8 +297,9 @@ def page_my_sections(
     """教师自己的授课列表，供花名册与成绩页的下拉框使用。"""
     offerings = teaching.list_my_offerings(db, teacher_id=teacher_id)
     codes = _semester_codes(db)
-    return [
-        {
+    return {
+        "offerings": [
+            {
             "id": item["offering_id"],
             "course_code": item["course_code"],
             "course_name": item["course_name"],
@@ -297,8 +313,9 @@ def page_my_sections(
             "teacher_id": item["teacher_id"],
             "is_mine": item["is_claimed_by_me"],
         }
-        for item in offerings
-    ]
+            for item in offerings
+        ]
+    }
 
 
 @router.post(
@@ -349,15 +366,20 @@ def page_offering_roster(
     roster = teaching.get_offering_roster(
         db, teacher_id=teacher_id, offering_id=section_id
     )
-    return [
-        {
-            "student_id": item["student_id"],
-            "student_number": item["student_number"],
-            "full_name": item["name"],
-            "enrolled_at": _format_moment(item["enrolled_at"]),
-        }
-        for item in roster["students"]
-    ]
+    return {
+        "offering_id": roster["offering"]["offering_id"],
+        "course_code": roster["offering"]["course_code"],
+        "course_name": roster["offering"]["course_name"],
+        "students": [
+            {
+                "student_id": item["student_id"],
+                "student_number": item["student_number"],
+                "full_name": item["name"],
+                "enrolled_at": _format_moment(item["enrolled_at"]),
+            }
+            for item in roster["students"]
+        ],
+    }
 
 
 @router.get("/teacher/sections/{section_id}/grades")
@@ -370,17 +392,22 @@ def page_offering_grades(
     sheet = teaching.list_offering_grades(
         db, teacher_id=teacher_id, offering_id=section_id
     )
-    return [
-        {
-            "student_id": item["student_id"],
-            "student_number": item["student_number"],
-            "full_name": item["name"],
-            "value": item["value"],
-            "updated_at": _format_moment(item["updated_at"]),
-            "updated_by": item["updated_by"],
-        }
-        for item in sheet["students"]
-    ]
+    return {
+        "offering_id": sheet["offering"]["offering_id"],
+        "semester_status": sheet["semester_status"],
+        "editable": sheet["editable"],
+        "students": [
+            {
+                "student_id": item["student_id"],
+                "student_number": item["student_number"],
+                "full_name": item["name"],
+                "value": item["value"],
+                "updated_at": _format_moment(item["updated_at"]),
+                "updated_by": item["updated_by"],
+            }
+            for item in sheet["students"]
+        ],
+    }
 
 
 class PageGradeEntry(BaseModel):
