@@ -20,13 +20,11 @@
           <th>序号</th>
           <th>学号</th>
           <th>姓名</th>
-          <th>行政院系 / 专业</th>
           <th>选课确认时间</th>
-          <th>电子邮箱</th>
         </tr>
       </thead>
       <tbody id="roster-body">
-        <tr><td colspan="6" class="empty-state">请在右上角下拉列表中选择您负责的班次。</td></tr>
+        <tr><td colspan="4" class="empty-state">请在右上角下拉列表中选择您负责的班次。</td></tr>
       </tbody>
     </table>
   </div>
@@ -58,7 +56,7 @@ async function loadRoster(sectionId) {
     currentRosterList = data || [];
     const tbody = document.getElementById("roster-body");
     if (currentRosterList.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="6" class="empty-state">本教学班当前暂无选课成功的学生名单。</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="4" class="empty-state">本教学班当前暂无选课成功的学生名单。</td></tr>`;
       return;
     }
     tbody.innerHTML = currentRosterList.map((stu, i) => `
@@ -66,13 +64,11 @@ async function loadRoster(sectionId) {
         <td>${i + 1}</td>
         <td><strong>${stu.student_number}</strong></td>
         <td>${stu.full_name}</td>
-        <td>${stu.department || '-'}</td>
         <td>${stu.enrolled_at || '-'}</td>
-        <td>${stu.email || '-'}</td>
       </tr>
     `).join("");
   } catch (err) {
-    document.getElementById("roster-body").innerHTML = `<tr><td colspan="6" class="empty-state">拉取学生名单失败</td></tr>`;
+    document.getElementById("roster-body").innerHTML = `<tr><td colspan="4" class="empty-state">拉取学生名单失败</td></tr>`;
   }
 }
 
@@ -81,12 +77,10 @@ function exportCSV() {
     SECD.showToast("名单为空，无法导出", "warning");
     return;
   }
-  let csv = "序号,学号,姓名,院系,选课时间,邮箱\n";
+  let csv = "序号,学号,姓名,选课时间\n";
   currentRosterList.forEach((s, i) => {
-    const dept = s.department || '';
     const enrolled = s.enrolled_at || '';
-    const email = s.email || '';
-    csv += `${i + 1},${s.student_number},${s.full_name},${dept},${enrolled},${email}\n`;
+    csv += `${i + 1},${s.student_number},${s.full_name},${enrolled}\n`;
   });
   const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
   const a = document.createElement("a");

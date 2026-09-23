@@ -252,6 +252,16 @@ def list_offering_grades(db: Session, *, teacher_id: int, offering_id: int) -> d
     ).all()
     semester = _get_semester(db, offering.semester_id)
     counts = _enrolled_counts(db, [offering.id])
+    # 最后一次成绩变更的操作教师与时间，用于页面显示"最后更新人 / 时间"
+    latest_changes = {
+        student_id: {"updated_at": changed_at, "updated_by": teacher_name}
+        for student_id, changed_at, teacher_name in db.execute(
+            select(GradeChange.student_id, GradeChange.changed_at, Teacher.name)
+            .join(Teacher, Teacher.id == GradeChange.changed_by_teacher_id)
+            .where(GradeChange.offering_id == offering.id)
+            .order_by(GradeChange.id)
+        ).all()
+    }
     return {
         "offering": offering_view(
             offering, teacher_id=teacher_id, enrolled_count=counts.get(offering.id, 0)
@@ -264,6 +274,8 @@ def list_offering_grades(db: Session, *, teacher_id: int, offering_id: int) -> d
                 "student_number": student_number,
                 "name": name,
                 "value": value.value if value is not None else None,
+                "updated_at": latest_changes.get(student_id, {}).get("updated_at"),
+                "updated_by": latest_changes.get(student_id, {}).get("updated_by"),
             }
             for student_id, student_number, name, value in rows
         ],

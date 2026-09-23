@@ -108,18 +108,40 @@ def test_endpoints_require_login(db, seed_basic):
     assert client.get("/api/v1/registrar/billing/jobs").status_code == 401
 
 
-def test_real_app_mounts_member4_routes_next_to_member2_mocks():
-    """真实接口已挂到主应用，成员 2 的模拟接口原样保留。"""
+def test_real_app_serves_page_paths_from_member4_router():
+    """页面原先调用的模拟接口已替换为真实实现，不再由 web_routes 提供。"""
     from app.main import app
+    from app.routers import teaching as teaching_routes
+    from web import web_routes
 
-    paths = {route.path for route in app.routes}
-    assert "/api/v1/teacher/offerings/{offering_id}/claim" in paths
-    assert "/api/v1/teacher/offerings/{offering_id}/grades" in paths
-    assert "/api/v1/student/me/grades" in paths
-    assert "/api/v1/registrar/billing/jobs" in paths
-    # 成员 2 的页面模拟接口仍在
-    assert "/api/v1/teacher/sections/{section_id}/claim" in paths
-    assert "/api/v1/student/grades" in paths
+    endpoints = {
+        route.path: route.endpoint
+        for route in app.routes
+        if getattr(route, "endpoint", None) is not None
+    }
+    for path in (
+        "/api/v1/teacher/claimable-sections",
+        "/api/v1/teacher/my-sections",
+        "/api/v1/teacher/sections/{section_id}/claim",
+        "/api/v1/teacher/sections/{section_id}/unclaim",
+        "/api/v1/teacher/sections/{section_id}/roster",
+        "/api/v1/teacher/sections/{section_id}/grades",
+        "/api/v1/student/grades",
+    ):
+        assert endpoints[path].__module__ == teaching_routes.__name__
+
+    # 成员 2 页面侧的模拟函数已删除
+    assert not hasattr(web_routes, "api_claimable_sections")
+    assert not hasattr(web_routes, "api_my_sections")
+    assert not hasattr(web_routes, "api_get_student_grades")
+    assert not hasattr(web_routes, "api_submit_grades")
+
+    # 学生选课相关的模拟接口不属于成员 4，保持原样
+    assert hasattr(web_routes, "api_get_results")
+
+    # 真实 REST 风格接口仍然保留
+    assert "/api/v1/teacher/offerings/{offering_id}/claim" in endpoints
+    assert "/api/v1/student/me/grades" in endpoints
 
 
 def test_semester_list_uses_real_data(db, seed_basic):
