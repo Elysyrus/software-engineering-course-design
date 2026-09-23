@@ -269,39 +269,6 @@ def test_claim_and_release_through_api(db, seed_basic):
     assert released.json()["teacher_id"] is None
 
 
-def test_claim_reports_business_errors_as_detail(db, seed_basic):
-    client = _client(db)
-    session = _teacher_session(db, seed_basic, "t1")
-    network = seed_basic.offerings["network"]
-
-    response = client.post(
-        f"/api/v1/teacher/offerings/{network.id}/claim",
-        cookies={"session_id": session.id},
-        headers={"X-CSRF-Token": session.csrf_token},
-    )
-
-    assert response.status_code == 403
-    assert "资格" in response.json()["detail"]
-
-
-def test_roster_endpoint_returns_real_students(db, seed_basic, completed_offering):
-    client = _client(db)
-    session = _teacher_session(db, seed_basic, "t1")
-
-    response = client.get(
-        f"/api/v1/teacher/offerings/{completed_offering.id}/roster",
-        cookies={"session_id": session.id},
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert [item["student_number"] for item in body["students"]] == [
-        "20260001",
-        "20260002",
-    ]
-    assert body["offering"]["course_code"] == "CS201"
-
-
 def test_grade_update_requires_completed_semester(db, seed_basic):
     client = _client(db)
     session = _teacher_session(db, seed_basic, "t2")

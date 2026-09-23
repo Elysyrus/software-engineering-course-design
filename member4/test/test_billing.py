@@ -203,27 +203,23 @@ def test_http_sender_posts_snapshot_payload(db, billing_job, monkeypatch):
     assert captured["timeout"] > 0
 
 
-def test_http_sender_reports_service_error(db, billing_job, monkeypatch):
-    def fake_post(url, json, timeout):
+def test_http_sender_reports_service_and_connection_errors(db, billing_job, monkeypatch):
+    """计费服务返回错误码或连不上时，都要收敛成 BillingSendError 交给重试逻辑。"""
+
+    def service_error(url, json, timeout):
         return httpx.Response(
             status_code=503, text="服务不可用", request=httpx.Request("POST", url)
         )
 
-    monkeypatch.setattr(httpx, "post", fake_post)
-
+    monkeypatch.setattr(httpx, "post", service_error)
     with pytest.raises(BillingSendError) as error:
         http_sender(billing_job)
-
     assert "503" in str(error.value)
 
-
-def test_http_sender_wraps_connection_errors(db, billing_job, monkeypatch):
-    def fake_post(url, json, timeout):
+    def connection_error(url, json, timeout):
         raise httpx.ConnectError("connection refused")
 
-    monkeypatch.setattr(httpx, "post", fake_post)
-
-    with pytest.raises(BillingSendError) as error:
+    monkeypatch.setattr(httpx, "post", connection_error)
+    with pytest.raises(BillingSendError) as connect_error:
         http_sender(billing_job)
-
-    assert "不可用" in str(error.value)
+    assert "不可用" in str(connect_error.value)

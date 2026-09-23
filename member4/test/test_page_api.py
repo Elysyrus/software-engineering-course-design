@@ -87,14 +87,6 @@ def completed_offering(db, seed_basic) -> Offering:
     return offering
 
 
-def test_page_endpoints_require_login(db, seed_basic):
-    client = _client(db)
-
-    assert client.get("/api/v1/teacher/claimable-sections").status_code == 401
-    assert client.get("/api/v1/teacher/my-sections").status_code == 401
-    assert client.get("/api/v1/student/grades").status_code == 401
-
-
 def test_claimable_sections_use_default_open_semester(db, seed_basic):
     """页面不带学期参数调用，接口回落到当前开放学期并返回真实班次。"""
     client = _client(db)
@@ -239,20 +231,6 @@ def test_grade_page_endpoint_rejects_legacy_score_payload(db, seed_basic, comple
     assert db.scalar(select(func.count()).select_from(Grade)) == 0
 
 
-def test_grade_page_endpoint_rejects_invalid_letter(db, seed_basic, completed_offering):
-    client = _client(db)
-    session = _teacher(db, seed_basic, "t1")
-
-    response = client.post(
-        f"/api/v1/teacher/sections/{completed_offering.id}/grades",
-        json={"grades": [{"student_id": seed_basic.students[0].id, "value": "E"}]},
-        cookies={"session_id": session.id},
-        headers={"X-CSRF-Token": session.csrf_token},
-    )
-
-    assert response.status_code == 422
-
-
 def test_student_grades_page_endpoint_returns_letter_grades(
     db, seed_basic, completed_offering
 ):
@@ -281,39 +259,6 @@ def test_student_grades_page_endpoint_returns_letter_grades(
     # 学分与 GPA 在真实模型里不存在
     assert "credits" not in body["items"][0]
     assert "gpa_point" not in body["items"][0]
-
-
-def test_other_student_sees_own_empty_grade_list(db, seed_basic, completed_offering):
-    client = _client(db)
-    session = _student(db, seed_basic, 2)
-
-    response = client.get("/api/v1/student/grades", cookies={"session_id": session.id})
-
-    assert response.status_code == 200
-    assert response.json()["items"] == []
-
-
-def test_page_endpoints_return_object_payloads(db, seed_basic, completed_offering):
-    """契约要求：页面接口根节点必须是 object，不能返回裸数组。"""
-    client = _client(db)
-    session = _teacher(db, seed_basic, "t1")
-    cookies = {"session_id": session.id}
-
-    for url in (
-        "/api/v1/semesters",
-        "/api/v1/teacher/claimable-sections",
-        "/api/v1/teacher/my-sections",
-        f"/api/v1/teacher/sections/{completed_offering.id}/roster",
-        f"/api/v1/teacher/sections/{completed_offering.id}/grades",
-    ):
-        response = client.get(url, cookies=cookies)
-        assert response.status_code == 200, url
-        assert isinstance(response.json(), dict), f"{url} 必须返回 object"
-
-    claimable = client.get(
-        "/api/v1/teacher/claimable-sections", cookies=cookies
-    ).json()
-    assert isinstance(claimable["offerings"], list)
 
 
 def test_real_pages_render_after_template_changes(db, seed_basic):

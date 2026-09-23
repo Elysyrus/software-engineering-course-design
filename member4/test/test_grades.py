@@ -160,21 +160,6 @@ def test_resubmitting_same_grade_writes_nothing(db, seed_basic, graded_offering)
     assert db.scalar(select(func.count()).select_from(GradeChange)) == 1
 
 
-def test_blank_first_entry_creates_no_change_record(db, seed_basic, graded_offering):
-    teacher = seed_basic.teachers["t1"]
-
-    result = save_offering_grades(
-        db,
-        teacher_id=teacher.id,
-        offering_id=graded_offering.id,
-        entries=_entries(seed_basic, [None, "", "  "]),
-    )
-
-    assert result["updated"] == 0
-    assert db.scalar(select(func.count()).select_from(Grade)) == 0
-    assert db.scalar(select(func.count()).select_from(GradeChange)) == 0
-
-
 def test_multiple_students_are_saved_in_one_transaction(db, seed_basic, graded_offering):
     teacher = seed_basic.teachers["t1"]
 
@@ -188,6 +173,8 @@ def test_multiple_students_are_saved_in_one_transaction(db, seed_basic, graded_o
     assert result["updated"] == 2
     assert result["unchanged"] == 1
     assert db.scalar(select(func.count()).select_from(GradeChange)) == 2
+    # 留空的学生不产生成绩行，只有两位真正录入的学生有记录
+    assert db.scalar(select(func.count()).select_from(Grade)) == 2
     listed = list_offering_grades(
         db, teacher_id=teacher.id, offering_id=graded_offering.id
     )

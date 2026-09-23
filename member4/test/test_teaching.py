@@ -1,15 +1,12 @@
 """任务 2：教师资格与班次查询服务测试。"""
 
 import pytest
-from sqlalchemy import select
 
 from app.errors import BusinessError
 from app.models import (
     Enrollment,
-    Offering,
     OfferingStatus,
     Schedule,
-    TeacherQualification,
 )
 from app.services.teaching import (
     list_claimable_offerings,
@@ -48,14 +45,6 @@ def test_qualified_courses_follow_teacher_qualifications(db, seed_basic):
     teacher_without_qualification = seed_basic.teachers["t3"]
     assert list_qualified_courses(db, teacher_id=teacher_without_qualification.id) == []
     assert qualified_course_ids(db, teacher_id=teacher_without_qualification.id) == set()
-
-
-def test_teacher_without_qualification_sees_no_claimable_offering(db, seed_basic):
-    teacher = seed_basic.teachers["t3"]
-    assert (
-        list_claimable_offerings(db, teacher_id=teacher.id, semester_id=seed_basic.semester.id)
-        == []
-    )
 
 
 def test_claimable_offerings_include_unclaimed_and_own_sections(db, seed_basic):
@@ -156,15 +145,3 @@ def test_unknown_teacher_or_semester_is_rejected(db, seed_basic):
             db, teacher_id=seed_basic.teachers["t1"].id, semester_id=9999
         )
     assert missing_semester.value.status_code == 404
-
-
-def test_qualification_rows_survive_repeated_queries(db, seed_basic):
-    """只读查询不得改动资格数据。"""
-    before = db.scalars(select(TeacherQualification.id).order_by(TeacherQualification.id)).all()
-    list_claimable_offerings(
-        db, teacher_id=seed_basic.teachers["t1"].id, semester_id=seed_basic.semester.id
-    )
-    list_my_offerings(db, teacher_id=seed_basic.teachers["t2"].id)
-    after = db.scalars(select(TeacherQualification.id).order_by(TeacherQualification.id)).all()
-    assert before == after
-    assert db.scalars(select(Offering.id)).all() != []

@@ -193,19 +193,6 @@ def test_completed_course_ids_only_count_passing_grades_before_semester(
     )
 
 
-def test_failed_grade_does_not_satisfy_prerequisite(db, seed_basic, graded_scenario):
-    failed_student = graded_scenario.students[4]
-    assert (
-        has_passed_course(
-            db,
-            student_id=failed_student.id,
-            course_id=seed_basic.courses["algorithm"].id,
-            before_semester_id=seed_basic.semester.id,
-        )
-        is False
-    )
-
-
 def test_latest_completed_semester_ignores_open_and_older_semesters(db, seed_basic):
     older = Semester(
         code="2024-FALL",

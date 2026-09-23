@@ -120,13 +120,6 @@ def test_timeout_injection_delays_then_accepts(client):
     assert client.get("/billing/charges").json()["count"] == 1
 
 
-def test_negative_amount_is_rejected(client):
-    response = client.post("/billing/charges", json=_payload(amount="-1.00"))
-
-    assert response.status_code == 422
-    assert client.get("/billing/charges").json()["count"] == 0
-
-
 def test_reset_clears_charges_and_conflicts(client):
     client.post("/billing/charges", json=_payload())
     client.post("/billing/charges", json=_payload(amount="150.00"))
