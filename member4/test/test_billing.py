@@ -2,17 +2,25 @@
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from threading import Event
 
 import httpx
 import pytest
+from sqlalchemy.orm import sessionmaker
 
+from app.errors import BusinessError
 from app.models import BillingJob, BillingStatus
+from app.services import billing
 from app.services.billing import (
     BillingSendError,
     build_payload,
+    billing_summary,
     dispatch_pending_jobs,
     http_sender,
+    is_abandoned,
     list_billing_jobs,
+    requeue_job,
+    run_retry_loop,
 )
 
 
@@ -47,13 +55,14 @@ def billed_students(db, seed_basic) -> list[BillingJob]:
 
 
 class _RecordingSender:
-    def __init__(self, *, error: str | None = None):
+    def __init__(self, *, error: str | None = None, retryable: bool = True):
         self.payloads: list[dict] = []
         self.error = error
+        self.retryable = retryable
 
     def __call__(self, job: BillingJob) -> None:
         if self.error is not None:
-            raise BillingSendError(self.error)
+            raise BillingSendError(self.error, retryable=self.retryable)
         self.payloads.append(build_payload(job))
 
 
@@ -223,3 +232,212 @@ def test_http_sender_reports_service_and_connection_errors(db, billing_job, monk
     with pytest.raises(BillingSendError) as connect_error:
         http_sender(billing_job)
     assert "不可用" in str(connect_error.value)
+
+
+@pytest.fixture
+def db_factory(db):
+    """与 app.database.SessionLocal 同构的会话工厂，供后台重试循环测试使用。"""
+    return sessionmaker(bind=db.get_bind(), expire_on_commit=False)
+
+
+def test_http_sender_marks_client_rejection_as_not_retryable(
+    db, billing_job, monkeypatch
+):
+    """计费端 4xx 拒绝账单本身，重发同一内容不会成功，必须停止重试。"""
+
+    def conflict(url, json, timeout):
+        return httpx.Response(
+            status_code=409, text="内容不一致", request=httpx.Request("POST", url)
+        )
+
+    monkeypatch.setattr(httpx, "post", conflict)
+    with pytest.raises(BillingSendError) as error:
+        http_sender(billing_job)
+    assert error.value.retryable is False
+    assert "409" in str(error.value)
+
+    def busy(url, json, timeout):
+        return httpx.Response(
+            status_code=503, text="服务不可用", request=httpx.Request("POST", url)
+        )
+
+    monkeypatch.setattr(httpx, "post", busy)
+    with pytest.raises(BillingSendError) as retry_error:
+        http_sender(billing_job)
+    assert retry_error.value.retryable is True
+
+
+def test_permanent_rejection_stops_retrying(db, billing_job):
+    sender = _RecordingSender(error="计费服务拒绝账单 409：内容不一致", retryable=False)
+
+    summary = dispatch_pending_jobs(db, sender=sender)
+
+    assert summary["dispatched"] == 1
+    assert summary["failed"] == 1
+    assert summary["abandoned"] == 1
+    assert summary["retrying"] == 0
+    assert billing_job.status == BillingStatus.FAILED
+    assert is_abandoned(billing_job) is True
+    assert billing_job.last_error.startswith("[不可重试]")
+
+    # 第二天也不会再重发，避免对同一份被拒绝的账单无限重试
+    later = dispatch_pending_jobs(
+        db, sender=_RecordingSender(), now=datetime.now(UTC) + timedelta(days=1)
+    )
+    assert later["dispatched"] == 0
+    assert billing_job.attempts == 1
+
+
+def test_job_is_claimed_before_sending(db, billing_job):
+    """发送时任务已置为 sending 且重试时间已顺延，并发调度器不会再挑到同一条。"""
+    seen: dict = {}
+
+    def sender(job: BillingJob) -> None:
+        fresh = db.get(BillingJob, job.id)
+        seen["status"] = fresh.status
+        seen["next_attempt_at"] = fresh.next_attempt_at
+        seen["attempts"] = fresh.attempts
+
+    moment = datetime.now(UTC)
+    dispatch_pending_jobs(db, sender=sender, now=moment)
+
+    assert seen["status"] is BillingStatus.SENDING
+    assert seen["attempts"] == 1
+    assert seen["next_attempt_at"].replace(tzinfo=None) == (
+        moment + timedelta(seconds=30)
+    ).replace(tzinfo=None)
+    assert billing_job.status == BillingStatus.SENT
+
+
+def test_unexpected_sender_error_does_not_abort_batch(db, billed_students):
+    """发送器抛出未预期的异常时，后面几条账单仍然继续发送。"""
+    calls: list[int] = []
+
+    def sender(job: BillingJob) -> None:
+        calls.append(job.id)
+        if len(calls) == 1:
+            raise RuntimeError("模拟发送器内部异常")
+
+    summary = dispatch_pending_jobs(db, sender=sender)
+
+    assert summary["dispatched"] == 3
+    assert len(calls) == 3
+    assert summary["sent"] == 2
+    assert summary["failed"] == 1
+    assert summary["retrying"] == 1
+
+
+def test_dispatch_with_nothing_due_is_a_noop(db, billing_job):
+    dispatch_pending_jobs(db, sender=_RecordingSender())
+
+    again = dispatch_pending_jobs(db, sender=_RecordingSender())
+
+    assert again == {
+        "dispatched": 0,
+        "sent": 0,
+        "failed": 0,
+        "abandoned": 0,
+        "retrying": 0,
+        "results": [],
+    }
+
+
+def test_retry_loop_dispatches_then_becomes_idle(db, db_factory, billing_job):
+    cycles: list[dict] = []
+
+    result = run_retry_loop(
+        db_factory=db_factory,
+        sender=_RecordingSender(),
+        iterations=2,
+        interval_seconds=0,
+        on_cycle=cycles.append,
+    )
+
+    assert result == {"cycles": 2, "sent": 1, "failed": 0, "abandoned": 0}
+    assert [cycle["dispatched"] for cycle in cycles] == [1, 0]
+    # 循环用的是另一个会话，重新读一次才能看到它写回的状态
+    db.refresh(billing_job)
+    assert billing_job.status == BillingStatus.SENT
+
+
+def test_retry_loop_stops_when_event_is_set(db, db_factory, billing_job):
+    stop_event = Event()
+    stop_event.set()
+
+    result = run_retry_loop(
+        db_factory=db_factory,
+        sender=_RecordingSender(),
+        stop_event=stop_event,
+        interval_seconds=0,
+    )
+
+    assert result["cycles"] == 0
+    assert billing_job.status == BillingStatus.PENDING
+
+
+def test_requeue_rearms_abandoned_job_for_another_attempt(db, billing_job):
+    dispatch_pending_jobs(db, sender=_RecordingSender(error="拒绝", retryable=False))
+    assert is_abandoned(billing_job) is True
+
+    requeue_job(db, job_id=billing_job.id)
+
+    assert billing_job.status == BillingStatus.PENDING
+    assert is_abandoned(billing_job) is False
+    assert dispatch_pending_jobs(db, sender=_RecordingSender())["sent"] == 1
+
+
+def test_requeue_rejects_missing_or_sent_job(db, billing_job):
+    with pytest.raises(BusinessError):
+        requeue_job(db, job_id=999)
+
+    dispatch_pending_jobs(db, sender=_RecordingSender())
+    with pytest.raises(BusinessError):
+        requeue_job(db, job_id=billing_job.id)
+
+
+def test_billing_summary_carries_fields_the_status_page_needs(
+    db, seed_basic, billed_students
+):
+    dispatch_pending_jobs(db, sender=_RecordingSender(), limit=2)
+
+    summary = billing_summary(db, semester_id=seed_basic.closed_semester.id)
+
+    assert summary["semester_code"] == "2025-FALL"
+    assert summary["billing_status"] == "PENDING"
+    assert summary["jobs_total"] == 3
+    assert summary["jobs_sent"] == 2
+    assert summary["jobs_pending"] == 1
+    assert summary["total_amount"] == pytest.approx(360.0)
+    bill = summary["bills"][0]
+    assert bill["bill_id"] == billed_students[0].id
+    assert bill["student_id"] == seed_basic.students[0].id
+    assert bill["student_number"] == "20260001"
+    assert bill["student_name"] == "学生1"
+    assert bill["enrolled_count"] == 1
+    assert isinstance(bill["amount"], float)
+    assert bill["status"] == "SENT"
+
+
+def test_billing_summary_reports_all_sent(db, seed_basic, billed_students):
+    dispatch_pending_jobs(db, sender=_RecordingSender())
+
+    summary = billing_summary(db, semester_id=seed_basic.closed_semester.id)
+
+    assert summary["billing_status"] == "ALL_SENT"
+    assert summary["jobs_failed"] == 0
+    assert {bill["status"] for bill in summary["bills"]} == {"SENT"}
+
+
+def test_billing_summary_reports_partial_failure(db, seed_basic, billed_students):
+    calls: list[int] = []
+
+    def sender(job: BillingJob) -> None:
+        calls.append(job.id)
+        if len(calls) == 1:
+            raise BillingSendError("计费服务拒绝账单", retryable=False)
+
+    dispatch_pending_jobs(db, sender=sender)
+    summary = billing_summary(db, semester_id=seed_basic.closed_semester.id)
+    assert summary["billing_status"] == "PARTIAL_FAIL"
+    assert summary["jobs_failed"] == 1
+    assert {bill["status"] for bill in summary["bills"]} == {"SENT", "FAILED"}

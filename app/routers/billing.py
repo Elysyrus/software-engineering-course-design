@@ -23,6 +23,18 @@ def list_billing_jobs(
     return {"jobs": [billing.billing_job_view(job) for job in jobs]}
 
 
+@router.get("/summary")
+def billing_summary(
+    semester_id: int | None = Query(
+        default=None, ge=1, description="学期 id；省略时使用最新一批账单所在学期"
+    ),
+    _registrar_id: int = Depends(require_registrar),
+    db: Session = Depends(get_db),
+):
+    """关闭结果与账单发送状态汇总，字段与关闭状态页面一致。"""
+    return billing.billing_summary(db, semester_id=semester_id)
+
+
 @router.post("/dispatch", dependencies=[Depends(require_csrf_token)])
 def dispatch_billing_jobs(
     limit: int | None = Query(default=None, ge=1, le=500),
@@ -31,3 +43,13 @@ def dispatch_billing_jobs(
 ):
     """立即派发到期的待发送账单；失败任务会按配置间隔自动重试。"""
     return billing.dispatch_pending_jobs(db, limit=limit)
+
+
+@router.post("/jobs/{job_id}/retry", dependencies=[Depends(require_csrf_token)])
+def requeue_billing_job(
+    job_id: int,
+    _registrar_id: int = Depends(require_registrar),
+    db: Session = Depends(get_db),
+):
+    """把已停止重试的账单重新排队，用于外部账单内容修正后的人工恢复。"""
+    return billing.requeue_job(db, job_id=job_id)
