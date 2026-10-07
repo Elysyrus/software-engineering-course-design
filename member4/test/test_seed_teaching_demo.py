@@ -40,8 +40,8 @@ def test_seed_teaching_demo_builds_structure_and_history_once(db: Session):
         "slots": 12,
         "qualifications": 10,
         "prerequisites": 1,
-        "schedules": 10,
-        "enrollments": 20,
+        "schedules": 14,
+        "enrollments": 32,
         "grades": 20,
     }
     assert second == {
@@ -59,8 +59,46 @@ def test_seed_teaching_demo_builds_structure_and_history_once(db: Session):
     assert db.scalar(select(func.count()).select_from(Offering)) == 12
     assert db.scalar(select(func.count()).select_from(TeacherQualification)) == 10
     assert db.scalar(select(func.count()).select_from(CoursePrerequisite)) == 1
-    assert db.scalar(select(func.count()).select_from(Enrollment)) == 20
+    assert db.scalar(select(func.count()).select_from(Enrollment)) == 32
     assert db.scalar(select(func.count()).select_from(Grade)) == 20
+
+
+def test_seed_teaching_demo_gives_open_semester_sections_enough_students(db: Session):
+    """开放学期已有教师的班次至少 4 人，关闭选课时不会因不足 3 人被取消。"""
+    factory = _factory(db)
+    seed_demo_data("Registrar123", session_factory=factory)
+    seed_teaching_demo(session_factory=factory)
+
+    open_semester = db.scalar(select(Semester).where(Semester.code == "2026-FALL"))
+    rows = db.execute(
+        select(Offering.section_number, func.count(Enrollment.id))
+        .join(Enrollment, Enrollment.offering_id == Offering.id)
+        .where(
+            Offering.semester_id == open_semester.id,
+            Offering.teacher_id.is_not(None),
+        )
+        .group_by(Offering.id)
+    ).all()
+
+    assert len(rows) == 3
+    assert all(count >= 3 for _, count in rows)
+    # 未认领班次不占正式选课，仍然留给认领演示
+    unclaimed = db.scalars(
+        select(Offering).where(
+            Offering.semester_id == open_semester.id,
+            Offering.teacher_id.is_(None),
+        )
+    ).all()
+    assert len(unclaimed) == 3
+    for offering in unclaimed:
+        assert (
+            db.scalar(
+                select(func.count())
+                .select_from(Enrollment)
+                .where(Enrollment.offering_id == offering.id)
+            )
+            == 0
+        )
 
 
 def test_seed_teaching_demo_marks_closed_semester_sections(db: Session):

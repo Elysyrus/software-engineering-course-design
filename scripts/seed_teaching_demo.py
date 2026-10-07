@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Callable
-from datetime import date
+from datetime import UTC, date, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -72,6 +72,16 @@ GRADE_PATTERN = (
 )
 
 HISTORY_COURSES = ("DEMO101", "DEMO103")
+
+# 开放学期里已有教师承担的班次；给它们放正式选课，关闭后才能生成非零账单
+OPEN_SEMESTER_SECTIONS = (
+    ("DEMO101", "02"),
+    ("DEMO102", "02"),
+    ("DEMO103", "02"),
+)
+
+# 关闭时不足 3 人的班次会被取消，演示数据按 4 人准备，留出余量
+OPEN_SEMESTER_STUDENT_COUNT = 4
 
 # 具备多门课程资格、用于演示"认领后与已有授课时间冲突"的教师序号
 CONFLICT_DEMO_COURSE_CODES = ("DEMO101", "DEMO102")
@@ -275,6 +285,66 @@ def _ensure_history(
     db.flush()
 
 
+def _ensure_open_semester_enrollments(
+    db: Session,
+    *,
+    semester: Semester,
+    offerings: dict[tuple[str, str], Offering],
+    created: dict[str, int],
+) -> None:
+    """给开放学期里已有教师的班次放正式选课。
+
+    没有这些选课，关闭选课时所有班次都会因不足 3 人而被取消，账单快照为空、
+    金额为 0，"关闭 -> 生成账单 -> 发送重试"就演示不出结果。
+    未认领的班次仍然留空，不占用认领演示用的班次。
+    """
+    students = db.scalars(
+        select(Student)
+        .order_by(Student.student_number)
+        .limit(OPEN_SEMESTER_STUDENT_COUNT)
+    ).all()
+    submitted_at = datetime.now(UTC)
+    for student in students:
+        schedule = db.scalar(
+            select(Schedule).where(
+                Schedule.student_id == student.id,
+                Schedule.semester_id == semester.id,
+            )
+        )
+        if schedule is None:
+            schedule = Schedule(
+                student_id=student.id,
+                semester_id=semester.id,
+                has_submitted=True,
+                last_submitted_at=submitted_at,
+            )
+            db.add(schedule)
+            db.flush()
+            created["schedules"] += 1
+        for course_code, section_number in OPEN_SEMESTER_SECTIONS:
+            offering = offerings.get((course_code, section_number))
+            if offering is None or offering.status != OfferingStatus.OPEN:
+                continue
+            if offering.teacher_id is None:
+                continue
+            enrolled = db.scalar(
+                select(Enrollment.id).where(
+                    Enrollment.schedule_id == schedule.id,
+                    Enrollment.offering_id == offering.id,
+                )
+            )
+            if enrolled is None:
+                db.add(
+                    Enrollment(
+                        schedule_id=schedule.id,
+                        offering_id=offering.id,
+                        course_id=offering.course_id,
+                    )
+                )
+                created["enrollments"] += 1
+    db.flush()
+
+
 def seed_teaching_demo(
     session_factory: Callable[[], Session] = SessionLocal,
 ) -> dict[str, int]:
@@ -312,6 +382,10 @@ def seed_teaching_demo(
             )
             if semester.status == SemesterStatus.CLOSED and teachers:
                 _ensure_history(
+                    db, semester=semester, offerings=offerings, created=created
+                )
+            if semester.status == SemesterStatus.OPEN and teachers:
+                _ensure_open_semester_enrollments(
                     db, semester=semester, offerings=offerings, created=created
                 )
         db.commit()
@@ -366,6 +440,10 @@ def main() -> None:
     for line in _describe_demo_state():
         print(line)
     print("已关闭学期 2025-FALL 含历史选课与成绩，可用于成绩录入与先修检查演示。")
+    print(
+        "开放学期 2026-FALL 的已认领班次各有 4 名正式学生："
+        "关闭选课会保留这些班次并生成非零账单，可用于计费发送与重试演示。"
+    )
 
 
 if __name__ == "__main__":
