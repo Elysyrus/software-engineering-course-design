@@ -121,6 +121,15 @@ def list_my_offerings(
     }
 
 
+@router.get("/teacher/gradable-sections")
+def list_gradable_sections(
+    teacher_id: int = Depends(require_teacher),
+    db: Session = Depends(get_db),
+):
+    """上一已完成学期中本人可以录入成绩的班次，供成绩录入页默认选择。"""
+    return teaching.list_gradable_offerings(db, teacher_id=teacher_id)
+
+
 @router.post(
     "/teacher/offerings/{offering_id}/claim",
     dependencies=[Depends(require_csrf_token)],
@@ -180,6 +189,22 @@ def get_offering_grades(
     """班次成绩单：正式名单与当前成绩。"""
     return teaching.list_offering_grades(
         db, teacher_id=teacher_id, offering_id=offering_id
+    )
+
+
+@router.get("/teacher/offerings/{offering_id}/grade-changes")
+def get_offering_grade_changes(
+    offering_id: int,
+    student_id: int | None = Query(default=None, ge=1),
+    teacher_id: int = Depends(require_teacher),
+    db: Session = Depends(get_db),
+):
+    """班次成绩变更记录；可按学生过滤。"""
+    return teaching.list_grade_changes(
+        db,
+        teacher_id=teacher_id,
+        offering_id=offering_id,
+        student_id=student_id,
     )
 
 
@@ -292,10 +317,14 @@ def page_claimable_sections(
 
 @router.get("/teacher/my-sections")
 def page_my_sections(
-    teacher_id: int = Depends(require_teacher), db: Session = Depends(get_db)
+    semester_id: int | None = Query(default=None, ge=1),
+    teacher_id: int = Depends(require_teacher),
+    db: Session = Depends(get_db),
 ):
-    """教师自己的授课列表，供花名册与成绩页的下拉框使用。"""
-    offerings = teaching.list_my_offerings(db, teacher_id=teacher_id)
+    """教师自己的授课列表，供花名册与成绩页的下拉框使用；可按学期过滤。"""
+    offerings = teaching.list_my_offerings(
+        db, teacher_id=teacher_id, semester_id=semester_id
+    )
     codes = _semester_codes(db)
     return {
         "offerings": [
@@ -408,6 +437,22 @@ def page_offering_grades(
             for item in sheet["students"]
         ],
     }
+
+
+@router.get("/teacher/sections/{section_id}/grade-changes")
+def page_offering_grade_changes(
+    section_id: int,
+    student_id: int | None = Query(default=None, ge=1),
+    teacher_id: int = Depends(require_teacher),
+    db: Session = Depends(get_db),
+):
+    """成绩录入页的变更记录入口；字段与 REST 路径一致。"""
+    return teaching.list_grade_changes(
+        db,
+        teacher_id=teacher_id,
+        offering_id=section_id,
+        student_id=student_id,
+    )
 
 
 class PageGradeEntry(BaseModel):

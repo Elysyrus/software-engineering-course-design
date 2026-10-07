@@ -282,6 +282,68 @@ def list_offering_grades(db: Session, *, teacher_id: int, offering_id: int) -> d
     }
 
 
+def list_grade_changes(
+    db: Session, *, teacher_id: int, offering_id: int, student_id: int | None = None
+) -> dict:
+    """成绩变更记录：首次录入、修改与留空都会追加一条，按时间倒序返回。"""
+    offering = _require_own_offering(db, teacher_id=teacher_id, offering_id=offering_id)
+    if student_id is not None and db.get(Student, student_id) is None:
+        raise BusinessError("学生不存在", 404)
+
+    stmt = (
+        select(
+            GradeChange.id,
+            GradeChange.student_id,
+            Student.student_number,
+            Student.name,
+            GradeChange.previous_value,
+            GradeChange.new_value,
+            GradeChange.changed_by_teacher_id,
+            Teacher.name,
+            GradeChange.changed_at,
+        )
+        .join(Student, Student.id == GradeChange.student_id)
+        .join(Teacher, Teacher.id == GradeChange.changed_by_teacher_id)
+        .where(GradeChange.offering_id == offering.id)
+        .order_by(GradeChange.id.desc())
+    )
+    if student_id is not None:
+        stmt = stmt.where(GradeChange.student_id == student_id)
+
+    rows = db.execute(stmt).all()
+    return {
+        "offering_id": offering.id,
+        "course_code": offering.course.code,
+        "course_name": offering.course.name,
+        "student_id": student_id,
+        "total": len(rows),
+        "changes": [
+            {
+                "change_id": change_id,
+                "student_id": row_student_id,
+                "student_number": student_number,
+                "student_name": student_name,
+                "previous_value": previous.value if previous is not None else None,
+                "new_value": new.value if new is not None else None,
+                "changed_by_teacher_id": changed_by_teacher_id,
+                "changed_by": changed_by,
+                "changed_at": changed_at,
+            }
+            for (
+                change_id,
+                row_student_id,
+                student_number,
+                student_name,
+                previous,
+                new,
+                changed_by_teacher_id,
+                changed_by,
+                changed_at,
+            ) in rows
+        ],
+    }
+
+
 def _normalize_grade(raw_value: object) -> GradeValue | None:
     """空字符串与 None 都表示留空；其余必须是 A-F/I 之一。"""
     if raw_value is None:
@@ -377,13 +439,32 @@ def save_offering_grades(
 
 
 def latest_completed_semester(db: Session) -> Semester | None:
-    """最近一个已完成学期；学生成绩页与教师录入入口都用它作为默认学期。"""
+    """最近一个已完成学期（"上一已完成学期"口径）。
+
+    成绩录入只允许发生在已完成学期，本函数是"该录哪个学期"的统一入口，
+    供 ``list_gradable_offerings`` 与其它需要默认学期的调用方复用。
+    """
     return db.scalar(
         select(Semester)
         .where(Semester.status == SemesterStatus.CLOSED)
         .order_by(Semester.ends_on.desc(), Semester.id.desc())
         .limit(1)
     )
+
+
+def list_gradable_offerings(db: Session, *, teacher_id: int) -> dict:
+    """上一已完成学期中、由本教师承担、可以录入成绩的班次。"""
+    _get_teacher(db, teacher_id)
+    semester = latest_completed_semester(db)
+    if semester is None:
+        return {"semester_id": None, "semester_code": None, "offerings": []}
+    return {
+        "semester_id": semester.id,
+        "semester_code": semester.code,
+        "offerings": list_my_offerings(
+            db, teacher_id=teacher_id, semester_id=semester.id
+        ),
+    }
 
 
 def list_student_grades(

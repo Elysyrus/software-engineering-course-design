@@ -126,6 +126,8 @@ def test_real_app_serves_page_paths_from_member4_router():
         "/api/v1/teacher/sections/{section_id}/unclaim",
         "/api/v1/teacher/sections/{section_id}/roster",
         "/api/v1/teacher/sections/{section_id}/grades",
+        "/api/v1/teacher/sections/{section_id}/grade-changes",
+        "/api/v1/teacher/gradable-sections",
         "/api/v1/student/grades",
     ):
         assert endpoints[path].__module__ == teaching_routes.__name__
@@ -141,6 +143,7 @@ def test_real_app_serves_page_paths_from_member4_router():
 
     # 真实 REST 风格接口仍然保留
     assert "/api/v1/teacher/offerings/{offering_id}/claim" in endpoints
+    assert "/api/v1/teacher/offerings/{offering_id}/grade-changes" in endpoints
     assert "/api/v1/student/me/grades" in endpoints
 
 
@@ -190,9 +193,11 @@ def test_read_endpoints_accept_requests_without_query_parameters(db, seed_basic)
         ("/api/v1/teacher/offerings/mine", teacher_cookies),
         ("/api/v1/teacher/claimable-sections", teacher_cookies),
         ("/api/v1/teacher/my-sections", teacher_cookies),
+        ("/api/v1/teacher/gradable-sections", teacher_cookies),
         ("/api/v1/student/me/grades", student_cookies),
         ("/api/v1/student/grades", student_cookies),
         ("/api/v1/registrar/billing/jobs", registrar_cookies),
+        ("/api/v1/registrar/billing/summary", registrar_cookies),
     ):
         response = client.get(url, cookies=cookies)
         assert response.status_code == 200, f"{url} -> {response.status_code}"
