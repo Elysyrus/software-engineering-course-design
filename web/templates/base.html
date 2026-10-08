@@ -39,12 +39,12 @@
         <a href="/student/courses" class="nav-link {% if active_nav == 'courses' %}active{% endif %}">选课目录</a>
         <a href="/student/draft" class="nav-link {% if active_nav == 'draft' %}active{% endif %}">选课草稿与排序</a>
         <a href="/student/results" class="nav-link {% if active_nav == 'results' %}active{% endif %}">正式选课结果</a>
-        <a href="/student/grades" class="nav-link {% if active_nav == 'grades' %}active{% endif %}">成绩与学分</a>
+        <a href="/student/grades" class="nav-link {% if active_nav == 'grades' %}active{% endif %}">我的成绩</a>
       {% elif user.role == 'teacher' %}
         <a href="/teacher/claim" class="nav-link {% if active_nav == 'claim' %}active{% endif %}">班次认领</a>
         <a href="/teacher/roster" class="nav-link {% if active_nav == 'roster' %}active{% endif %}">授课花名册</a>
         <a href="/teacher/grades" class="nav-link {% if active_nav == 'grades' %}active{% endif %}">成绩录入</a>
-      {% elif user.role == 'admin' %}
+      {% elif user.role == 'registrar' %}
         <a href="/admin/users" class="nav-link {% if active_nav == 'users' %}active{% endif %}">师生人员管理</a>
         <a href="/admin/close-registration" class="nav-link {% if active_nav == 'close' %}active{% endif %}">关闭选课控制台</a>
         <a href="/admin/closing-status" class="nav-link {% if active_nav == 'status' %}active{% endif %}">结果与账单状态</a>

@@ -9,6 +9,8 @@ from app.models import (
     AccountRole,
     BillingJob,
     Grade,
+    GradeChange,
+    LoginNumberSequence,
     Offering,
     Schedule,
     ServerSession,
@@ -33,38 +35,110 @@ def _atomic(db: Session):
         db.rollback()
         raise
 
-def generate_login_number(
-    db: Session,
-    role: AccountRole,
-) -> str:
-    year = str(date.today().year)
 
-    if role == AccountRole.STUDENT:
-        prefix = year
-        last_number = db.scalar(
-            select(func.max(Student.student_number))
-            .where(Student.student_number.like(f"{prefix}%"))
-        )
-
-    elif role == AccountRole.TEACHER:
-        prefix = f"T{year}"
-        last_number = db.scalar(
-            select(func.max(Teacher.teacher_number))
-            .where(Teacher.teacher_number.like(f"{prefix}%"))
-        )
-
-    else:
+def generate_login_number(db: Session, role: AccountRole) -> str:
+    """序列行在人员与账号创建事务中加锁；不会因删除最后一个人员而重复编号。"""
+    if role not in (AccountRole.STUDENT, AccountRole.TEACHER):
         raise ValueError("只能为学生或教师生成登录编号")
+    prefix = (
+        str(date.today().year)
+        if role == AccountRole.STUDENT
+        else f"T{date.today().year}"
+    )
+    table, column = (
+        (Student, Student.student_number)
+        if role == AccountRole.STUDENT
+        else (Teacher, Teacher.teacher_number)
+    )
+    existing = list(db.scalars(select(column).where(column.like(f"{prefix}%"))))
+    initial = max(
+        (
+            int(value[len(prefix) :])
+            for value in existing
+            if value[len(prefix) :].isdigit()
+        ),
+        default=0,
+    )
+    dialect = db.get_bind().dialect.name
+    if dialect == "mysql":
+        from sqlalchemy.dialects.mysql import insert
 
-    sequence = 1 if last_number is None else int(last_number[-4:]) + 1
-    return f"{prefix}{sequence:04d}"
+        stmt = insert(LoginNumberSequence).values(prefix=prefix, value=initial)
+        db.execute(stmt.on_duplicate_key_update(prefix=stmt.inserted.prefix))
+    elif dialect == "sqlite":
+        from sqlalchemy.dialects.sqlite import insert
+
+        db.execute(
+            insert(LoginNumberSequence)
+            .values(prefix=prefix, value=initial)
+            .on_conflict_do_nothing(index_elements=["prefix"])
+        )
+    else:
+        raise ValueError("编号生成支持 MySQL 与 SQLite")
+    sequence = db.scalar(
+        select(LoginNumberSequence)
+        .where(LoginNumberSequence.prefix == prefix)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    sequence.value = max(sequence.value, initial) + 1
+    if sequence.value > 9999:
+        raise ValueError("本年度编号已用尽，请联系管理员扩展编号规则")
+    db.flush()
+    return f"{prefix}{sequence.value:04d}"
+
+
+def _apply_profile(person, profile: dict) -> None:
+    birth = profile.get("birth_date", person.birth_date)
+    graduation = profile.get(
+        "graduation_date", getattr(person, "graduation_date", None)
+    )
+    if birth and birth > date.today():
+        raise ValueError("出生日期不能在未来")
+    if birth and graduation and graduation < birth:
+        raise ValueError("毕业日期不能早于出生日期")
+    if "status" in profile and profile["status"] not in {
+        "active",
+        "on_leave",
+        "graduated",
+        "retired",
+    }:
+        raise ValueError("人员状态无效")
+    for key, value in profile.items():
+        if key == "graduation_date" and not isinstance(person, Student):
+            if value is not None:
+                raise ValueError("教师不能设置毕业日期")
+            continue
+        if key not in {
+            "birth_date",
+            "social_security_number",
+            "status",
+            "graduation_date",
+        }:
+            raise ValueError("未知人员字段")
+        if key == "status" and value is None:
+            raise ValueError("人员状态不能为空")
+        setattr(person, key, value)
+
+
+def _profile_payload(person) -> dict:
+    return {
+        "birth_date": person.birth_date.isoformat() if person.birth_date else None,
+        "social_security_number": person.social_security_number,
+        "status": person.status,
+        "graduation_date": (
+            person.graduation_date.isoformat()
+            if isinstance(person, Student) and person.graduation_date
+            else None
+        ),
+    }
 
 
 def create_student(
-        
     db: Session,
     name: str,
     initial_password: str,
+    **profile,
 ) -> Student:
     with _atomic(db):
         login_number = generate_login_number(
@@ -77,6 +151,7 @@ def create_student(
             name=name,
             active=True,
         )
+        _apply_profile(student, profile)
         db.add(student)
         db.flush()  # 此时 student.id 已生成，但还没有提交
 
@@ -91,12 +166,12 @@ def create_student(
     return student
 
 
-
 def create_teacher(
     db: Session,
     name: str,
     department: str,
     initial_password: str,
+    **profile,
 ) -> Teacher:
     with _atomic(db):
         login_number = generate_login_number(
@@ -110,6 +185,7 @@ def create_teacher(
             department=department,
             active=True,
         )
+        _apply_profile(teacher, profile)
         db.add(teacher)
 
         # 先写入数据库，取得 teacher.id，但尚未提交事务
@@ -185,9 +261,11 @@ def update_student(
     *,
     name: str | None = None,
     active: bool | None = None,
+    **profile,
 ) -> Student:
     with _atomic(db):
         student = get_student(db, student_id)
+        _apply_profile(student, profile)
         if name is not None:
             if not name.strip():
                 raise ValueError("学生姓名不能为空")
@@ -210,9 +288,11 @@ def update_teacher(
     name: str | None = None,
     department: str | None = None,
     active: bool | None = None,
+    **profile,
 ) -> Teacher:
     with _atomic(db):
         teacher = get_teacher(db, teacher_id)
+        _apply_profile(teacher, profile)
         if name is not None:
             if not name.strip():
                 raise ValueError("教师姓名不能为空")
@@ -249,6 +329,7 @@ def list_users_for_registrar(db: Session) -> list[dict[str, int | str | bool]]:
                     "id": account.id,
                     "username": account.login_number,
                     "full_name": student.name,
+                    **_profile_payload(student),
                     "role": "student",
                     "department": "",
                     "is_active": account.active and student.active,
@@ -263,6 +344,7 @@ def list_users_for_registrar(db: Session) -> list[dict[str, int | str | bool]]:
                     "id": account.id,
                     "username": account.login_number,
                     "full_name": teacher.name,
+                    **_profile_payload(teacher),
                     "role": "teacher",
                     "department": teacher.department,
                     "is_active": account.active and teacher.active,
@@ -273,7 +355,10 @@ def list_users_for_registrar(db: Session) -> list[dict[str, int | str | bool]]:
 
 def _managed_account(db: Session, account_id: int) -> Account:
     account = db.get(Account, account_id)
-    if account is None or account.role not in {AccountRole.STUDENT, AccountRole.TEACHER}:
+    if account is None or account.role not in {
+        AccountRole.STUDENT,
+        AccountRole.TEACHER,
+    }:
         raise ValueError("师生账号不存在")
     return account
 
@@ -285,6 +370,7 @@ def _user_payload(db: Session, account: Account) -> dict[str, int | str | bool]:
             "id": account.id,
             "username": account.login_number,
             "full_name": student.name,
+            **_profile_payload(student),
             "role": "student",
             "department": "",
             "is_active": account.active and student.active,
@@ -294,6 +380,7 @@ def _user_payload(db: Session, account: Account) -> dict[str, int | str | bool]:
         "id": account.id,
         "username": account.login_number,
         "full_name": teacher.name,
+        **_profile_payload(teacher),
         "role": "teacher",
         "department": teacher.department,
         "is_active": account.active and teacher.active,
@@ -310,18 +397,23 @@ def update_user_for_registrar(
     *,
     full_name: str | None = None,
     department: str | None = None,
+    **profile,
 ) -> dict[str, int | str | bool]:
     account = _managed_account(db, account_id)
     if account.role == AccountRole.STUDENT:
         if department is not None:
             raise ValueError("学生不能设置院系")
-        update_student(db, account.subject_id, name=full_name)
+        update_student(db, account.subject_id, name=full_name, **profile)
     else:
-        update_teacher(db, account.subject_id, name=full_name, department=department)
+        update_teacher(
+            db, account.subject_id, name=full_name, department=department, **profile
+        )
     return get_user_for_registrar(db, account_id)
 
 
-def set_account_status(db: Session, account_id: int, is_active: bool) -> dict[str, int | str | bool]:
+def set_account_status(
+    db: Session, account_id: int, is_active: bool
+) -> dict[str, int | str | bool]:
     account = _managed_account(db, account_id)
     if account.role == AccountRole.STUDENT:
         update_student(db, account.subject_id, active=is_active)
@@ -359,12 +451,18 @@ def has_student_business_records(db: Session, student_id: int) -> bool:
 
 
 def has_teacher_business_records(db: Session, teacher_id: int) -> bool:
-    return db.scalar(
-        select(Offering.id).where(Offering.teacher_id == teacher_id).limit(1)
-    ) is not None
+    return any(
+        db.scalar(select(model.id).where(column == teacher_id).limit(1)) is not None
+        for model, column in (
+            (Offering, Offering.teacher_id),
+            (GradeChange, GradeChange.changed_by_teacher_id),
+        )
+    )
 
 
-def _account_for_subject(db: Session, role: AccountRole, subject_id: int) -> Account | None:
+def _account_for_subject(
+    db: Session, role: AccountRole, subject_id: int
+) -> Account | None:
     return db.scalar(
         select(Account).where(Account.role == role, Account.subject_id == subject_id)
     )
@@ -373,7 +471,9 @@ def _account_for_subject(db: Session, role: AccountRole, subject_id: int) -> Acc
 def _delete_account_and_sessions(db: Session, account: Account | None) -> None:
     if account is None:
         return
-    for session in db.scalars(select(ServerSession).where(ServerSession.account_id == account.id)):
+    for session in db.scalars(
+        select(ServerSession).where(ServerSession.account_id == account.id)
+    ):
         db.delete(session)
     db.delete(account)
 
@@ -414,13 +514,14 @@ def delete_or_deactivate_teacher(db: Session, teacher_id: int) -> str:
     return "deleted"
 
 
-
 def init_registrar(db: Session, login_number: str, initial_password: str) -> Account:
     with _atomic(db):
-        existing = db.scalar(select(Account).where(Account.role == AccountRole.REGISTRAR))
+        existing = db.scalar(
+            select(Account).where(Account.role == AccountRole.REGISTRAR)
+        )
 
         if existing is not None:
-              return existing
+            return existing
         account = create_account(
             db=db,
             login_number=login_number,

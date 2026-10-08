@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from app.services.semesters import is_completed, today
+
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
@@ -111,7 +113,9 @@ def offering_view(offering: Offering, *, teacher_id: int, enrolled_count: int) -
     }
 
 
-def list_claimable_offerings(db: Session, *, teacher_id: int, semester_id: int) -> list[dict]:
+def list_claimable_offerings(
+    db: Session, *, teacher_id: int, semester_id: int
+) -> list[dict]:
     """本教师可认领的班次：属于自己资格课程、未被他人认领、未取消。"""
     _get_teacher(db, teacher_id)
     _get_semester(db, semester_id)
@@ -196,7 +200,9 @@ def get_offering_roster(db: Session, *, teacher_id: int, offering_id: int) -> di
     }
 
 
-def _require_own_offering(db: Session, *, teacher_id: int, offering_id: int) -> Offering:
+def _require_own_offering(
+    db: Session, *, teacher_id: int, offering_id: int
+) -> Offering:
     """班次存在性、教师存在性与授课归属的统一校验。"""
     _get_teacher(db, teacher_id)
     offering = db.get(Offering, offering_id)
@@ -209,7 +215,7 @@ def _require_own_offering(db: Session, *, teacher_id: int, offering_id: int) -> 
 
 def require_completed_semester(semester: Semester) -> None:
     """成绩只录入已完成学期；与选课入口的"学期开放"判断正好相反。"""
-    if semester.status != SemesterStatus.CLOSED:
+    if not is_completed(semester):
         raise BusinessError("只能录入已完成学期的成绩")
 
 
@@ -267,7 +273,7 @@ def list_offering_grades(db: Session, *, teacher_id: int, offering_id: int) -> d
             offering, teacher_id=teacher_id, enrolled_count=counts.get(offering.id, 0)
         ),
         "semester_status": semester.status.value,
-        "editable": semester.status == SemesterStatus.CLOSED,
+        "editable": is_completed(semester),
         "students": [
             {
                 "student_id": student_id,
@@ -446,7 +452,7 @@ def latest_completed_semester(db: Session) -> Semester | None:
     """
     return db.scalar(
         select(Semester)
-        .where(Semester.status == SemesterStatus.CLOSED)
+        .where(Semester.status == SemesterStatus.CLOSED, Semester.ends_on < today())
         .order_by(Semester.ends_on.desc(), Semester.id.desc())
         .limit(1)
     )
@@ -529,7 +535,9 @@ def list_student_grades(
     }
 
 
-def completed_course_ids(db: Session, *, student_id: int, before_semester_id: int) -> set[int]:
+def completed_course_ids(
+    db: Session, *, student_id: int, before_semester_id: int
+) -> set[int]:
     """先修检查约定：取该学期开始前已完成的学期中，当前有效的通过成绩课程。
 
     与成员 1 的选课事务共用同一实现，避免先修口径出现第二个版本。
@@ -538,7 +546,9 @@ def completed_course_ids(db: Session, *, student_id: int, before_semester_id: in
     return passed_course_ids(db, student_id=student_id, semester=semester)
 
 
-def has_passed_course(db: Session, *, student_id: int, course_id: int, before_semester_id: int) -> bool:
+def has_passed_course(
+    db: Session, *, student_id: int, course_id: int, before_semester_id: int
+) -> bool:
     """单个先修条件的判断入口，供先修检查与页面提示复用。"""
     return course_id in completed_course_ids(
         db, student_id=student_id, before_semester_id=before_semester_id
@@ -550,7 +560,7 @@ def _lock_teacher(db: Session, teacher_id: int) -> Teacher:
 
     同一教师的并发认领由该行锁串行化，所以不必再锁定他名下的其他班次。
     """
-    teacher = db.get(Teacher, teacher_id, with_for_update=True)
+    teacher = db.get(Teacher, teacher_id, with_for_update=True, populate_existing=True)
     if teacher is None:
         raise BusinessError("教师不存在", 404)
     if not teacher.active:
@@ -560,7 +570,10 @@ def _lock_teacher(db: Session, teacher_id: int) -> Teacher:
 
 def _locked_offering(db: Session, offering_id: int) -> Offering:
     offering = db.scalar(
-        select(Offering).where(Offering.id == offering_id).with_for_update()
+        select(Offering)
+        .where(Offering.id == offering_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
     )
     if offering is None:
         raise BusinessError("班次不存在", 404)
@@ -580,6 +593,8 @@ def _conflicting_offering(
             Offering.status == OfferingStatus.OPEN,
         )
         .options(selectinload(Offering.slots))
+        .with_for_update(read=True)
+        .execution_options(populate_existing=True)
     ).all()
     for other in others:
         if slots_conflict(offering, other):

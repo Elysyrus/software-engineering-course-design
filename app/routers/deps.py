@@ -15,6 +15,8 @@ def require_csrf_token(request: Request, db: Session = Depends(get_db)) -> None:
     待成员 3 把它提升为 auth_contract 的公共依赖后可去掉这段镜像实现。
     """
     session_id = request.cookies.get("session_id")
+    if session_id is None:
+        raise HTTPException(status_code=401, detail="未登录")
     session = db.get(ServerSession, session_id) if session_id is not None else None
     if session is None:
         raise HTTPException(status_code=401, detail="登录状态无效")

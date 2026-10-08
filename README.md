@@ -1,107 +1,69 @@
 # 课程注册系统
 
-这是软件工程课程设计的 FastAPI 课程注册系统。成员 1–4 的代码已集成，包括核心选课、网页、登录与师生管理、教师授课与成绩、计费对接。
+成员 1–4 的统一功能交付版本：FastAPI + SQLAlchemy + MySQL / SQLite + Jinja2 页面。学生、教师和教务页面都调用真实业务服务，外部课程目录与计费接收端为独立模拟系统。
 
-**当前仍未完成全部网页联调**：学生选课和教务关闭/账单状态页面仍调用模拟接口；真实后端已存在。不得把这些页面的成功提示作为选课落库或账单发送成功的证据。最新检查与待办见 [成员1–4集成检查报告](docs/成员1-4集成检查报告_2026-10-08.md)。
+## 快速启动
 
-## 已完成
-
-- 草稿与正式结果分开保存，保存草稿不占名额。
-- 首次提交严格校验 4 个主选和 2 个备选；后续允许 0-4 个主选和 0-2 个备选。
-- 校验班次状态、容量、先修课、上课冲突和同课程重复修读。
-- 提交、换班式修改、退课和删除方案均在事务中执行；版本号阻止旧页面覆盖新状态。
-- 关闭选课采用已确认的两轮处理，取消无教师/人数不足班次，按排队顺序尝试备选。
-- 关闭事务内固定最终课表和金额，创建待发送账单；成员 4 已提供计费接收模拟服务、发送和后台重试。
-- 成员 3 已接入正式 Cookie 会话、首次改密、角色权限和师生账号管理。
-- 成员 4 已接入真实教师授课、名单、成绩与成绩变更记录接口及对应页面。
-
-## 本地运行	
+在项目根目录执行：
 
 ```powershell
 py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-Copy-Item .env.example .env
+.\.venv\Scripts\python.exe -m scripts.run_demo
 ```
 
-若暂时没有 MySQL，可把 `.env` 中的 `DATABASE_URL` 改为：
+已有虚拟环境时直接执行最后一条。打开 `http://127.0.0.1:8000/login`。启动命令会完成迁移、初始化演示数据并启动主应用、只读课程目录、计费服务和后台重试。默认 SQLite 方便本机复现，Ctrl+C 停止本次启动的服务。
 
-```text
-DATABASE_URL=sqlite:///./course_registration.db
-```
-
-然后执行：
+教务 `registrar`，学生 `S001`–`S010`，教师 `T001`–`T010`；初始密码均为 `Initial123`，首次登录必须改密。重复启动保留现有数据和密码。使用 MySQL 8 时：
 
 ```powershell
-.\.venv\Scripts\alembic.exe upgrade head
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload
+.\.venv\Scripts\python.exe -m scripts.run_demo --database-url 'mysql+pymysql://用户名:密码@127.0.0.1:3306/数据库名?charset=utf8mb4'
 ```
 
-打开 `http://127.0.0.1:8000/login` 使用网页，或打开 `http://127.0.0.1:8000/docs` 查看真实接口。登录后浏览器会保存 `HttpOnly` 会话 Cookie；网页公共请求函数会提交 CSRF Token，但成员 1 的真实写入口仍需补后端校验。约定见 [接口文档](docs/接口约定v0.2.md) 和 [成员4接口说明](docs/成员4接口说明.md)。
+数据库需预先创建。完整步骤、端口选项、账号、验证证据与文档入口见 [最终版运行与验证说明](docs/最终版运行与验证说明.md)。
 
-计费功能另需启动模拟服务与重试进程（在另两个终端、项目根目录运行）：
+## 功能
 
-```powershell
-.\.venv\Scripts\python.exe -m uvicorn mock_billing.mock_billing_service:app --host 127.0.0.1 --port 8082
-.\.venv\Scripts\python.exe -m scripts.billing_retry_worker
-```
+- 登录、退出、首次改密、Cookie 会话、角色与 CSRF 校验；账号停用立即使旧会话失效。
+- 只读外部目录查询，真实名额轮询；个人草稿保存、主备选类型与顺序、首次 4+2、后续增退选、换班、退课、删除方案与版本冲突处理。
+- 先修课、同课程重复修读、时间冲突、容量校验；事务失败保留原正式结果，MySQL 锁后当前读防止超额。
+- 教师授课资格、认领与取消、真实名单、上一已完成学期成绩录入/修改/留空、成绩变更记录和学生本人查询。
+- 完整师生资料维护、自动分配唯一编号、启停、重置密码；有业务历史时删除转为停用。
+- 教务真实关闭、两轮取消与备选、固定课表和金额快照；真实账单状态、自动重试、人工恢复、计费端持久去重。
 
-成员 4 演示数据和详细运行步骤见 [成员4运行验证说明](docs/成员4运行验证说明.md)。目录模拟服务可运行 `python -m uvicorn mock_catalog.mock_catalog_service:app --host 127.0.0.1 --port 8081`，但当前应用尚未接入它。
-
-## 初始化教务账号
-
-首次使用空数据库时，在项目根目录执行：
-
-```powershell
-.\.venv\Scripts\python.exe -m scripts.init_registrar --login-number registrar
-```
-
-脚本会安全地提示输入初始密码，不会回显或输出密码。也可为部署环境设置 `INITIAL_REGISTRAR_PASSWORD` 环境变量后执行同一命令。脚本可重复运行：若教务账号已存在，会保留原账号和密码。
-
-普通学生、教师的初始密码：当前统一为  **`Initial123`** 。
-
-## 可选：初始化答辩演示数据
-
-初始化教务账号后，可批量补充 10 名随机姓名的演示学生、10 名随机姓名的演示教师和 3 门演示课程：
-
-```powershell
-.\.venv\Scripts\python.exe -m scripts.seed_demo_data
-```
-
-脚本会提示输入教务初始密码，也支持 `INITIAL_REGISTRAR_PASSWORD` 环境变量。它可以重复执行，只创建缺失的演示记录；新建师生的登录编号由系统生成，初始密码均为 `Initial123`，首次登录必须修改。
-
-## 测试
+## 验证
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-测试不仅检查响应，还检查选课人数、原结果、方案版本、关闭状态和账单快照等数据库结果。
-
-2026-10-08 集成回归为 **168 passed, 2 skipped**；两项 MySQL 并发用例未配置测试库而跳过。页面模拟接口的遗留问题不在现有测试的完整覆盖范围内，详见集成检查报告。
-
-若有专用 MySQL 测试库（库名必须以 `_test` 结尾），可执行真实双事务名额竞争测试：
+真实 MySQL 竞争检查必须配置独立测试库：
 
 ```powershell
-$env:MYSQL_TEST_DATABASE_URL='mysql+pymysql://user:password@127.0.0.1/course_registration_test?charset=utf8mb4'
-.\.venv\Scripts\python.exe -m pytest -q -m mysql
+$env:MYSQL_TEST_DATABASE_URL='mysql+pymysql://用户名:密码@127.0.0.1:3306/course_registration_test?charset=utf8mb4'
+.\.venv\Scripts\python.exe -m pytest -q
 ```
 
-## 项目结构
+测试库名称必须以 `_test` 结尾；测试会创建/删除该库的测试表，不能使用业务数据库。未配置时五项 MySQL 用例跳过。最终结果与本轮浏览器流程记录见运行说明；不把 SQLite 测试当作 MySQL 并发证明。
+
+## 结构
 
 ```text
-app/models.py                    总体数据模型
-app/services/registration.py    选课与关闭事务
-app/main.py                      FastAPI 接口
-migrations/                     Alembic 数据库迁移
-tests/                           核心业务和接口测试
-docs/成员1核心设计说明.md         设计与并发约定
-docs/接口约定v0.2.md             给成员 2、3、4 的集成契约
-app/services/auth.py             正式登录与会话
-app/services/personnel.py        师生管理
-app/services/teaching.py         教师授课与成绩
-app/services/billing.py          账单派发与重试
-web/                            页面模板与请求适配
-mock_catalog/                   尚待应用联调的目录模拟服务
-mock_billing/                   计费接收模拟服务
-scripts/billing_retry_worker.py  独立后台重试进程
+app/models.py                  数据结构
+app/services/registration.py   选课与关闭事务
+app/services/auth.py           账号与会话
+app/services/personnel.py      师生资料
+app/services/teaching.py       教师与成绩
+app/services/catalog.py        只读外部目录适配
+app/services/billing.py        账单派发与重试
+app/routers/                   真实 API 与页面适配
+web/                           三种角色页面和请求交互
+mock_catalog/                  独立目录模拟系统
+mock_billing/                  独立计费模拟系统
+migrations/                    数据库迁移
+scripts/run_demo.py            完整启动入口
+scripts/seed_final_demo.py      最终版演示数据
+tests/, member3/test/, member4/test/  回归测试
 ```
+
+成员 5、6 按当前代码编写正式文档。修复前的集成检查报告和各成员阶段说明保留为历史记录；最终实现以当前代码和 [最终版说明](docs/最终版运行与验证说明.md) 为准。本轮统一修复由 AI 执行，不能表述为用户独立开发或所有成员已掌握全部代码。

@@ -5,7 +5,16 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.services import personnel
-from app.models import Account, AccountRole, Course, Offering, Schedule, Semester, Student, Teacher
+from app.models import (
+    Account,
+    AccountRole,
+    Course,
+    Offering,
+    Schedule,
+    Semester,
+    Student,
+    Teacher,
+)
 from app.services.auth import verify_password
 from app.services.personnel import (
     create_student,
@@ -19,7 +28,7 @@ from app.services.personnel import (
     list_users_for_registrar,
     update_student,
     update_teacher,
-    init_registrar
+    init_registrar,
 )
 
 
@@ -48,11 +57,18 @@ def test_list_get_and_update_personnel(db: Session):
     teacher = create_teacher(db, "王老师", "软件学院", "Initial123")
 
     assert [student.id for student in list_students(db, name="张")] == [first.id]
-    assert [student.id for student in list_students(db, student_number=second.student_number)] == [second.id]
-    assert [item.id for item in list_teachers(db, department="软件学院")] == [teacher.id]
+    assert [
+        student.id
+        for student in list_students(db, student_number=second.student_number)
+    ] == [second.id]
+    assert [item.id for item in list_teachers(db, department="软件学院")] == [
+        teacher.id
+    ]
 
     updated_student = update_student(db, first.id, name="张新名", active=False)
-    updated_teacher = update_teacher(db, teacher.id, name="王教授", department="计算机学院")
+    updated_teacher = update_teacher(
+        db, teacher.id, name="王教授", department="计算机学院"
+    )
     assert updated_student.name == "张新名"
     assert updated_student.active is False
     assert updated_teacher.name == "王教授"
@@ -91,7 +107,9 @@ def test_delete_personnel_without_history_removes_person_and_account(db: Session
 def test_student_with_schedule_is_deactivated_and_sessions_are_revoked(db: Session):
     student = create_student(db, "保留历史学生", "Initial123")
     account = db.scalar(select(Account).where(Account.subject_id == student.id))
-    semester = Semester(code="2026-FALL", starts_on=date(2026, 9, 1), ends_on=date(2027, 1, 15))
+    semester = Semester(
+        code="2026-FALL", starts_on=date(2026, 9, 1), ends_on=date(2027, 1, 15)
+    )
     db.add(semester)
     db.flush()
     db.add(Schedule(student_id=student.id, semester_id=semester.id))
@@ -107,7 +125,9 @@ def test_student_with_schedule_is_deactivated_and_sessions_are_revoked(db: Sessi
 def test_teacher_with_offering_is_deactivated(db: Session):
     teacher = create_teacher(db, "保留历史教师", "计算机学院", "Initial123")
     account = db.scalar(select(Account).where(Account.subject_id == teacher.id))
-    semester = Semester(code="2027-SPRING", starts_on=date(2027, 2, 20), ends_on=date(2027, 7, 1))
+    semester = Semester(
+        code="2027-SPRING", starts_on=date(2027, 2, 20), ends_on=date(2027, 7, 1)
+    )
     course = Course(code="CS901", name="测试课程", fee=100)
     db.add_all([semester, course])
     db.flush()
@@ -117,7 +137,7 @@ def test_teacher_with_offering_is_deactivated(db: Session):
             course_id=course.id,
             teacher_id=teacher.id,
             section_number="01",
-            capacity=20,
+            capacity=10,
         )
     )
     db.commit()
@@ -129,10 +149,14 @@ def test_teacher_with_offering_is_deactivated(db: Session):
     assert account.active is False
 
 
-def test_deactivation_rolls_back_when_session_revocation_fails(db: Session, monkeypatch):
+def test_deactivation_rolls_back_when_session_revocation_fails(
+    db: Session, monkeypatch
+):
     student = create_student(db, "事务回滚学生", "Initial123")
     account = db.scalar(select(Account).where(Account.subject_id == student.id))
-    semester = Semester(code="2027-FALL", starts_on=date(2027, 9, 1), ends_on=date(2028, 1, 15))
+    semester = Semester(
+        code="2027-FALL", starts_on=date(2027, 9, 1), ends_on=date(2028, 1, 15)
+    )
     db.add(semester)
     db.flush()
     db.add(Schedule(student_id=student.id, semester_id=semester.id))
@@ -152,7 +176,6 @@ def test_deactivation_rolls_back_when_session_revocation_fails(db: Session, monk
     assert account.active is True
 
 
-
 def test_init_registrar_creates_account(db: Session):
     account = init_registrar(
         db,
@@ -165,10 +188,14 @@ def test_init_registrar_creates_account(db: Session):
     assert account.subject_id == account.id
     assert account.must_change_password is True
     assert account.active is True
-    assert verify_password(
-        "Initial123",
-        account.password_hash,
-    ) is True
+    assert (
+        verify_password(
+            "Initial123",
+            account.password_hash,
+        )
+        is True
+    )
+
 
 def test_init_registrar_is_idempotent(db: Session):
     first = init_registrar(
@@ -185,18 +212,19 @@ def test_init_registrar_is_idempotent(db: Session):
     )
 
     registrars = db.scalars(
-        select(Account).where(
-            Account.role == AccountRole.REGISTRAR
-        )
+        select(Account).where(Account.role == AccountRole.REGISTRAR)
     ).all()
 
     assert first.id == second.id
     assert len(registrars) == 1
     assert second.password_hash == original_hash
-    assert verify_password(
-        "Changed123",
-        second.password_hash,
-    ) is False
+    assert (
+        verify_password(
+            "Changed123",
+            second.password_hash,
+        )
+        is False
+    )
 
 
 def test_init_registrar_rejects_weak_password(db: Session):
@@ -207,10 +235,6 @@ def test_init_registrar_rejects_weak_password(db: Session):
             initial_password="weak",
         )
 
-    account = db.scalar(
-        select(Account).where(
-            Account.role == AccountRole.REGISTRAR
-        )
-    )
+    account = db.scalar(select(Account).where(Account.role == AccountRole.REGISTRAR))
 
     assert account is None

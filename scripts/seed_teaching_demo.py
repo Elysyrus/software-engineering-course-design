@@ -38,7 +38,6 @@ from app.models import (
 )
 from scripts.seed_demo_data import DEMO_COURSES
 
-
 # (学期编号, 开始日期, 结束日期, 状态)
 SEMESTERS = (
     ("2025-FALL", date(2025, 9, 1), date(2026, 1, 15), SemesterStatus.CLOSED),
@@ -108,7 +107,9 @@ def _get_or_create_semester(db: Session, spec, created: dict[str, int]) -> Semes
     code, starts_on, ends_on, status = spec
     semester = db.scalar(select(Semester).where(Semester.code == code))
     if semester is None:
-        semester = Semester(code=code, starts_on=starts_on, ends_on=ends_on, status=status)
+        semester = Semester(
+            code=code, starts_on=starts_on, ends_on=ends_on, status=status
+        )
         db.add(semester)
         db.flush()
         created["semesters"] += 1
@@ -144,7 +145,14 @@ def _ensure_offerings(
             qualification_pool.setdefault(code, []).append(teacher)
 
     offerings: dict[tuple[str, str], Offering] = {}
-    for course_code, section_number, weekday, start_period, end_period, preassigned in SECTIONS:
+    for (
+        course_code,
+        section_number,
+        weekday,
+        start_period,
+        end_period,
+        preassigned,
+    ) in SECTIONS:
         course = courses_by_code[course_code]
         offering = db.scalar(
             select(Offering).where(
@@ -158,7 +166,7 @@ def _ensure_offerings(
                 semester_id=semester.id,
                 course_id=course.id,
                 section_number=section_number,
-                capacity=30,
+                capacity=10,
             )
             offering.slots.append(
                 OfferingSlot(
@@ -189,7 +197,11 @@ def _ensure_offerings(
 
 
 def _ensure_qualifications(
-    db: Session, *, courses: dict[str, Course], teachers: list[Teacher], created: dict[str, int]
+    db: Session,
+    *,
+    courses: dict[str, Course],
+    teachers: list[Teacher],
+    created: dict[str, int],
 ) -> None:
     for index, assigned_codes in _qualification_plan(len(teachers)).items():
         teacher = teachers[index]
@@ -202,13 +214,17 @@ def _ensure_qualifications(
             )
             if exists is None:
                 db.add(
-                    TeacherQualification(teacher_id=teacher.id, course_id=courses[code].id)
+                    TeacherQualification(
+                        teacher_id=teacher.id, course_id=courses[code].id
+                    )
                 )
                 created["qualifications"] += 1
     db.flush()
 
 
-def _ensure_prerequisite(db: Session, *, courses: dict[str, Course], created: dict[str, int]) -> None:
+def _ensure_prerequisite(
+    db: Session, *, courses: dict[str, Course], created: dict[str, int]
+) -> None:
     course_code, prerequisite_code = PREREQUISITE
     existing = db.scalar(
         select(CoursePrerequisite.id).where(
@@ -392,7 +408,9 @@ def seed_teaching_demo(
     return created
 
 
-def _describe_demo_state(session_factory: Callable[[], Session] = SessionLocal) -> list[str]:
+def _describe_demo_state(
+    session_factory: Callable[[], Session] = SessionLocal,
+) -> list[str]:
     """输出演示要点：每个教师的资格与开放学期仍可认领的班次。"""
     with session_factory() as db:
         login_numbers = {
@@ -412,7 +430,9 @@ def _describe_demo_state(session_factory: Callable[[], Session] = SessionLocal) 
             lines.append(f"  资格：{teacher_number} → {course_code}")
 
         open_semester = db.scalar(
-            select(Semester).where(Semester.status == SemesterStatus.OPEN).order_by(Semester.code)
+            select(Semester)
+            .where(Semester.status == SemesterStatus.OPEN)
+            .order_by(Semester.code)
         )
         if open_semester is not None:
             claimable = db.execute(
@@ -436,7 +456,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="初始化教学演示数据")
     parser.parse_args()
     created = seed_teaching_demo()
-    print("教学演示数据初始化完成：" + "，".join(f"{key}={value}" for key, value in created.items()))
+    print(
+        "教学演示数据初始化完成："
+        + "，".join(f"{key}={value}" for key, value in created.items())
+    )
     for line in _describe_demo_state():
         print(line)
     print("已关闭学期 2025-FALL 含历史选课与成绩，可用于成绩录入与先修检查演示。")

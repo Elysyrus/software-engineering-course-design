@@ -36,14 +36,15 @@
 <script>
 let currentGradingStudents = [];
 let activeSectionId = null;
+let canEdit = false;
 
 async function loadGradingSections() {
   try {
-    const response = await SECD.request("/api/v1/teacher/my-sections");
-    const sections = (response && response.offerings) || [];
+    const response = await SECD.request("/api/v1/teacher/gradable-sections");
+    const sections = ((response && response.offerings) || []).map(x=>({...x,id:x.offering_id}));
     const sel = document.getElementById("grade-section-selector");
     sel.innerHTML = `<option value="">-- 选择班次录入成绩 --</option>` + sections.map(s => `
-      <option value="${s.id}">#${s.id} -${s.course_name}</option>
+      <option value="${s.id}">#${s.id} -${SECD.escape(s.course_name)}</option>
     `).join("");
     if (sections.length > 0) {
       sel.value = sections[0].id;
@@ -57,6 +58,8 @@ async function loadStudentsForGrading(sectionId) {
   activeSectionId = sectionId;
   try {
     const data = await SECD.request(`/api/v1/teacher/sections/${sectionId}/grades`);
+    canEdit = data.editable === true;
+    document.querySelector("button[onclick=\"submitGrades()\"]").disabled = !canEdit;
     currentGradingStudents = (data && data.students) || [];
     if (data && data.editable === false) {
       SECD.showToast("该班次所在学期尚未结束，成绩只能录入已完成学期。", "warning");
@@ -68,11 +71,11 @@ async function loadStudentsForGrading(sectionId) {
     }
     tbody.innerHTML = currentGradingStudents.map((s, idx) => `
       <tr>
-        <td><strong>${s.student_number}</strong></td>
-        <td>${s.full_name}</td>
+        <td><strong>${SECD.escape(s.student_number)}</strong></td>
+        <td>${SECD.escape(s.full_name)}</td>
         <td>
           <select class="form-select grade-select" data-student-id="${s.student_id}"
-                  style="padding: 0.35rem 0.5rem;">
+                  style="padding: 0.35rem 0.5rem;" ${canEdit ? '' : 'disabled'}>
             <option value="" ${s.value === null ? 'selected' : ''}>留空</option>
             ${["A", "B", "C", "D", "F", "I"].map(v =>
               `<option value="${v}" ${s.value === v ? 'selected' : ''}>${v}</option>`).join("")}
@@ -83,7 +86,7 @@ async function loadStudentsForGrading(sectionId) {
             ${s.value !== null ? '已评定' : '未评定'}
           </span>
         </td>
-        <td>${s.updated_by ? s.updated_by + ' ' : ''}${s.updated_at || '未提交'}</td>
+        <td>${SECD.escape(s.updated_by ? s.updated_by + ' ' : '')}${SECD.escape(s.updated_at || '未提交')}</td>
       </tr>
     `).join("");
   } catch (err) {
@@ -92,7 +95,7 @@ async function loadStudentsForGrading(sectionId) {
 }
 
 async function submitGrades() {
-  if (!activeSectionId) {
+  if (!activeSectionId || !canEdit) {
     SECD.showToast("请先选择对应的教学班次", "warning");
     return;
   }

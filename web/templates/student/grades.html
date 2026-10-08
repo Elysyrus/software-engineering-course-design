@@ -45,9 +45,9 @@ async function loadGrades() {
     }
     tbody.innerHTML = list.map(g => `
       <tr>
-        <td>${g.semester}</td>
-        <td><strong>${g.course_code}</strong></td>
-        <td>${g.course_name}</td>
+        <td>${SECD.escape(g.semester)}</td>
+        <td><strong>${SECD.escape(g.course_code)}</strong></td>
+        <td>${SECD.escape(g.course_name)}</td>
         <td><strong>${g.value !== null ? g.value : '暂未公布'}</strong></td>
         <td>
           <span class="role-badge ${g.is_passed ? 'role-student' : 'role-teacher'}">

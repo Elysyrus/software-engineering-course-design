@@ -16,6 +16,7 @@ __pycache__/
 .pytest_cache/
 *.db
 tmp/
+output/
 
 # 成员 4 本地接口变更记录（仅本地保留，不提交）
 docs/成员4接口变更记录.md
