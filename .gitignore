@@ -18,12 +18,5 @@ __pycache__/
 tmp/
 output/
 
-# 成员 4 本地接口变更记录（仅本地保留，不提交）
-docs/成员4接口变更记录.md
-
-# 成员 4 本地测试文档与接口测试集合（仅本地保留，不提交）
-member4/成员4接口测试文档.md
-member4/成员4接口测试集合.postman_collection.json
-
 # IDE 配置
 .idea/

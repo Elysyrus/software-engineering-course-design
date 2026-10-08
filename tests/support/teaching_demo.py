@@ -1,16 +1,7 @@
-"""演示用的教学结构数据：学期、班次、时段、授课资格与历史成绩。
-
-在 ``scripts.seed_demo_data`` 之后运行：
-
-    ./.venv/Scripts/python.exe -m scripts.seed_teaching_demo
-
-脚本可重复执行：已存在的学期、班次、资格、选课与成绩都会原样保留，
-不会覆盖教师在页面上做出的修改。
-"""
+"""教师与成绩回归测试专用数据，不是应用初始化入口。"""
 
 from __future__ import annotations
 
-import argparse
 from collections.abc import Callable
 from datetime import UTC, date, datetime
 
@@ -36,7 +27,7 @@ from app.models import (
     Teacher,
     TeacherQualification,
 )
-from scripts.seed_demo_data import DEMO_COURSES
+from tests.support.personnel_demo import DEMO_COURSES
 
 # (学期编号, 开始日期, 结束日期, 状态)
 SEMESTERS = (
@@ -406,68 +397,3 @@ def seed_teaching_demo(
                 )
         db.commit()
     return created
-
-
-def _describe_demo_state(
-    session_factory: Callable[[], Session] = SessionLocal,
-) -> list[str]:
-    """输出演示要点：每个教师的资格与开放学期仍可认领的班次。"""
-    with session_factory() as db:
-        login_numbers = {
-            account.subject_id: account.login_number
-            for account in db.scalars(
-                select(Account).where(Account.role == AccountRole.TEACHER)
-            ).all()
-        }
-        lines = []
-        rows = db.execute(
-            select(Teacher.teacher_number, Course.code)
-            .join(TeacherQualification, TeacherQualification.teacher_id == Teacher.id)
-            .join(Course, Course.id == TeacherQualification.course_id)
-            .order_by(Teacher.teacher_number, Course.code)
-        ).all()
-        for teacher_number, course_code in rows:
-            lines.append(f"  资格：{teacher_number} → {course_code}")
-
-        open_semester = db.scalar(
-            select(Semester)
-            .where(Semester.status == SemesterStatus.OPEN)
-            .order_by(Semester.code)
-        )
-        if open_semester is not None:
-            claimable = db.execute(
-                select(Course.code, Offering.section_number)
-                .join(Offering, Offering.course_id == Course.id)
-                .where(
-                    Offering.semester_id == open_semester.id,
-                    Offering.teacher_id.is_(None),
-                    Offering.status == OfferingStatus.OPEN,
-                )
-                .order_by(Course.code, Offering.section_number)
-            ).all()
-            lines.append(
-                f"  {open_semester.code} 待认领班次："
-                + "、".join(f"{code}-{section}" for code, section in claimable)
-            )
-        return lines
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description="初始化教学演示数据")
-    parser.parse_args()
-    created = seed_teaching_demo()
-    print(
-        "教学演示数据初始化完成："
-        + "，".join(f"{key}={value}" for key, value in created.items())
-    )
-    for line in _describe_demo_state():
-        print(line)
-    print("已关闭学期 2025-FALL 含历史选课与成绩，可用于成绩录入与先修检查演示。")
-    print(
-        "开放学期 2026-FALL 的已认领班次各有 4 名正式学生："
-        "关闭选课会保留这些班次并生成非零账单，可用于计费发送与重试演示。"
-    )
-
-
-if __name__ == "__main__":
-    main()
