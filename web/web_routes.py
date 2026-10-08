@@ -144,6 +144,13 @@ class SubmitRegistrationReq(BaseModel):
     version: int
     ordered_section_ids: List[int]
 
+class GradeItem(BaseModel):
+    student_id: int
+    score: float
+
+class SubmitGradesReq(BaseModel):
+    grades: List[GradeItem]
+
 class CreateUserReq(BaseModel):
     full_name: str = Field(min_length=1, max_length=100)
     role: Literal["student", "teacher"]
@@ -284,9 +291,54 @@ async def api_submit_registration(req: SubmitRegistrationReq):
 async def api_get_results():
     return MOCK_STATE["results"]
 
-# 成员 4 的教师授课、成绩与学生成绩接口已改为真实实现，见 app/routers/teaching.py：
-#   /api/v1/teacher/claimable-sections、/api/v1/teacher/my-sections、
-#   /api/v1/teacher/sections/{id}/claim|unclaim|roster|grades、/api/v1/student/grades
+@web_router.get("/api/v1/student/grades")
+async def api_get_student_grades():
+    return {
+        "total_credits": 14.0,
+        "gpa": 3.82,
+        "items": [
+            {"semester": "2025-2026-1", "course_code": "CS101", "course_name": "面向对象软件工程", "credits": 4.0, "score": 92.0, "gpa_point": 4.0, "is_passed": True},
+            {"semester": "2025-2026-1", "course_code": "CS202", "course_name": "操作系统原理", "credits": 3.5, "score": 88.5, "gpa_point": 3.7, "is_passed": True},
+            {"semester": "2025-2026-2", "course_code": "CS303", "course_name": "分布式数据库系统", "credits": 3.0, "score": None, "gpa_point": None, "is_passed": False}
+        ]
+    }
+
+@web_router.get("/api/v1/teacher/claimable-sections")
+async def api_claimable_sections():
+    return [
+        {"id": 101, "course_code": "CS101", "course_name": "面向对象软件工程", "credits": 4.0, "capacity": 30, "schedule_time": "周一 08:00-09:40", "classroom": "正新楼 301", "teacher_id": 1001, "is_mine": True},
+        {"id": 601, "course_code": "CS606", "course_name": "算法设计与分析", "credits": 3.0, "capacity": 45, "schedule_time": "周五 13:30-15:10", "classroom": "计算机楼 A101", "teacher_id": None, "is_mine": False}
+    ]
+
+@web_router.post("/api/v1/teacher/sections/{section_id}/claim")
+async def api_claim_section(section_id: int):
+    return {"message": "认领成功"}
+
+@web_router.post("/api/v1/teacher/sections/{section_id}/unclaim")
+async def api_unclaim_section(section_id: int):
+    return {"message": "已释放认领"}
+
+@web_router.get("/api/v1/teacher/my-sections")
+async def api_my_sections():
+    return [{"id": 101, "course_code": "CS101", "course_name": "面向对象软件工程 (班次 01)"}]
+
+@web_router.get("/api/v1/teacher/sections/{section_id}/roster")
+async def api_get_roster(section_id: int):
+    return [
+        {"student_number": "2024001", "full_name": "张三", "department": "软件学院", "enrolled_at": "2026-09-01 10:15", "email": "zhangsan@univ.edu.cn"},
+        {"student_number": "2024002", "full_name": "李四", "department": "计算机系", "enrolled_at": "2026-09-01 10:20", "email": "lisi@univ.edu.cn"}
+    ]
+
+@web_router.get("/api/v1/teacher/sections/{section_id}/grades")
+async def api_get_grading_roster(section_id: int):
+    return [
+        {"student_id": 1, "student_number": "2024001", "full_name": "张三", "score": 91.5, "updated_at": "2026-09-10 14:00"},
+        {"student_id": 2, "student_number": "2024002", "full_name": "李四", "score": None, "updated_at": None}
+    ]
+
+@web_router.post("/api/v1/teacher/sections/{section_id}/grades")
+async def api_submit_grades(section_id: int, req: SubmitGradesReq):
+    return {"message": f"成功保存 {len(req.grades)} 条学生成绩"}
 
 @web_router.get("/api/v1/admin/users")
 async def api_get_users(

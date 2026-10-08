@@ -237,39 +237,6 @@ class Grade(Base):
     value: Mapped[GradeValue | None] = mapped_column(Enum(GradeValue), nullable=True)
 
 
-class GradeChange(Base):
-    """成绩变更记录：每次录入、修改或留空都追加一条，保留变更前后值。"""
-
-    __tablename__ = "grade_changes"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    student_id: Mapped[int] = mapped_column(ForeignKey("students.id", ondelete="RESTRICT"), index=True)
-    offering_id: Mapped[int] = mapped_column(ForeignKey("offerings.id", ondelete="RESTRICT"), index=True)
-    previous_value: Mapped[GradeValue | None] = mapped_column(Enum(GradeValue), nullable=True)
-    new_value: Mapped[GradeValue | None] = mapped_column(Enum(GradeValue), nullable=True)
-    changed_by_teacher_id: Mapped[int] = mapped_column(
-        ForeignKey("teachers.id", ondelete="RESTRICT"), index=True
-    )
-    changed_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(UTC)
-    )
-
-
-class TeacherQualification(Base):
-    """教师授课资格：教师只能认领自己具备资格的课程班次。"""
-
-    __tablename__ = "teacher_qualifications"
-    __table_args__ = (UniqueConstraint("teacher_id", "course_id"),)
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    teacher_id: Mapped[int] = mapped_column(
-        ForeignKey("teachers.id", ondelete="CASCADE"), index=True
-    )
-    course_id: Mapped[int] = mapped_column(
-        ForeignKey("courses.id", ondelete="RESTRICT"), index=True
-    )
-
-
 class BillingJob(Base):
     __tablename__ = "billing_jobs"
     __table_args__ = (UniqueConstraint("semester_id", "student_id"),)
