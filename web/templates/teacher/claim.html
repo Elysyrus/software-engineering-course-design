@@ -14,15 +14,16 @@
         <tr>
           <th>班次号</th>
           <th>课程编号与名称</th>
-          <th>学分</th>
+          <th>学费</th>
           <th>计划容量</th>
-          <th>上课时段与教室</th>
+          <th>已选人数</th>
+          <th>上课时段</th>
           <th>认领状态</th>
           <th>操作</th>
         </tr>
       </thead>
       <tbody id="claim-body">
-        <tr><td colspan="7" class="empty-state">正在查询可认领班次...</td></tr>
+        <tr><td colspan="8" class="empty-state">正在查询可认领班次...</td></tr>
       </tbody>
     </table>
   </div>
@@ -34,18 +35,20 @@
 async function loadClaimSections() {
   try {
     const data = await SECD.request("/api/v1/teacher/claimable-sections");
+    const offerings = (data && data.offerings) || [];
     const tbody = document.getElementById("claim-body");
-    if (!data || data.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="7" class="empty-state">暂无可认领的教学班次。</td></tr>`;
+    if (offerings.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="8" class="empty-state">暂无可认领的教学班次。</td></tr>`;
       return;
     }
-    tbody.innerHTML = data.map(sec => `
+    tbody.innerHTML = offerings.map(sec => `
       <tr>
         <td>#${sec.id}</td>
         <td><strong>${sec.course_code}</strong> -${sec.course_name}</td>
-        <td>${sec.credits}</td>
+        <td>¥${sec.fee}</td>
         <td>${sec.capacity} 人</td>
-        <td>${sec.schedule_time} (${sec.classroom})</td>
+        <td>${sec.enrolled_count} 人</td>
+        <td>${sec.schedule_time || '-'}</td>
         <td>
           <span class="role-badge ${sec.teacher_id ? 'role-student' : 'role-teacher'}">
             ${sec.teacher_id ? (sec.is_mine ? '您已认领' : '已被他人认领') : '待认领'}
@@ -58,7 +61,7 @@ async function loadClaimSections() {
       </tr>
     `).join("");
   } catch (err) {
-    document.getElementById("claim-body").innerHTML = `<tr><td colspan="7" class="empty-state">获取班次列表失败</td></tr>`;
+    document.getElementById("claim-body").innerHTML = `<tr><td colspan="8" class="empty-state">获取班次列表失败</td></tr>`;
   }
 }
 

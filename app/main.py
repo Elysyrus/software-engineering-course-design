@@ -14,9 +14,15 @@ from app.services.registration import (
     save_draft,
     submit_schedule,
 )
+from app.routers import billing as billing_routes
+from app.routers import teaching as teaching_routes
 
 
 app = FastAPI(title="课程注册系统", version="0.1.0")
+
+# 成员 4 真实接口（与 web/web_routes.py 中的页面模拟接口并存，路径不重叠）
+app.include_router(teaching_routes.router)
+app.include_router(billing_routes.router)
 
 
 @app.exception_handler(BusinessError)
