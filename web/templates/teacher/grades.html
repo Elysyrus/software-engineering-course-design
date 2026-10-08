@@ -19,7 +19,7 @@
         <tr>
           <th>学号</th>
           <th>姓名</th>
-          <th style="width: 180px;">成绩等级 (A ~ D 通过)</th>
+          <th style="width: 180px;">成绩 (0 ~ 100)</th>
           <th>当前状态</th>
           <th>最后更新人 / 时间</th>
         </tr>
@@ -39,8 +39,7 @@ let activeSectionId = null;
 
 async function loadGradingSections() {
   try {
-    const response = await SECD.request("/api/v1/teacher/my-sections");
-    const sections = (response && response.offerings) || [];
+    const sections = await SECD.request("/api/v1/teacher/my-sections");
     const sel = document.getElementById("grade-section-selector");
     sel.innerHTML = `<option value="">-- 选择班次录入成绩 --</option>` + sections.map(s => `
       <option value="${s.id}">#${s.id} -${s.course_name}</option>
@@ -57,10 +56,7 @@ async function loadStudentsForGrading(sectionId) {
   activeSectionId = sectionId;
   try {
     const data = await SECD.request(`/api/v1/teacher/sections/${sectionId}/grades`);
-    currentGradingStudents = (data && data.students) || [];
-    if (data && data.editable === false) {
-      SECD.showToast("该班次所在学期尚未结束，成绩只能录入已完成学期。", "warning");
-    }
+    currentGradingStudents = data || [];
     const tbody = document.getElementById("grade-entry-body");
     if (currentGradingStudents.length === 0) {
       tbody.innerHTML = `<tr><td colspan="5" class="empty-state">该班级下无学生名单</td></tr>`;
@@ -71,19 +67,16 @@ async function loadStudentsForGrading(sectionId) {
         <td><strong>${s.student_number}</strong></td>
         <td>${s.full_name}</td>
         <td>
-          <select class="form-select grade-select" data-student-id="${s.student_id}"
-                  style="padding: 0.35rem 0.5rem;">
-            <option value="" ${s.value === null ? 'selected' : ''}>留空</option>
-            ${["A", "B", "C", "D", "F", "I"].map(v =>
-              `<option value="${v}" ${s.value === v ? 'selected' : ''}>${v}</option>`).join("")}
-          </select>
+          <input type="number" min="0" max="100" step="0.5" class="form-input score-input"
+                 data-student-id="${s.student_id}" value="${s.score !== null ? s.score : ''}"
+                 placeholder="输入 0-100" style="padding: 0.35rem 0.5rem;">
         </td>
         <td>
-          <span class="role-badge ${s.value !== null ? 'role-student' : 'role-teacher'}">
-            ${s.value !== null ? '已评定' : '未评定'}
+          <span class="role-badge ${s.score !== null ? 'role-student' : 'role-teacher'}">
+            ${s.score !== null ? '已打分' : '未评定'}
           </span>
         </td>
-        <td>${s.updated_by ? s.updated_by + ' ' : ''}${s.updated_at || '未提交'}</td>
+        <td>${s.updated_at || '未提交'}</td>
       </tr>
     `).join("");
   } catch (err) {
@@ -96,22 +89,30 @@ async function submitGrades() {
     SECD.showToast("请先选择对应的教学班次", "warning");
     return;
   }
-  const selects = document.querySelectorAll(".grade-select");
-  // 空字符串表示留空，服务端会记录 "原成绩 -> 留空" 的变更
-  const gradesPayload = Array.from(selects).map(input => ({
-    student_id: parseInt(input.dataset.studentId),
-    value: input.value.trim() === "" ? null : input.value.trim()
-  }));
+  const inputs = document.querySelectorAll(".score-input");
+  const gradesPayload = [];
+  for (let input of inputs) {
+    const val = input.value.trim();
+    if (val !== "") {
+      const num = parseFloat(val);
+      if (isNaN(num) || num < 0 || num > 100) {
+        SECD.showToast("成绩必须为 0 到 100 之间的有效数字", "danger");
+        input.focus();
+        return;
+      }
+      gradesPayload.push({
+        student_id: parseInt(input.dataset.studentId),
+        score: num
+      });
+    }
+  }
 
   if (gradesPayload.length === 0) {
-    SECD.showToast("当前班次没有可录入的学生", "warning");
+    SECD.showToast("请至少录入一位学生的有效成绩", "warning");
     return;
   }
 
-  const graded = gradesPayload.filter(item => item.value !== null).length;
-  const ok = await SECD.confirmAction(
-    `本次提交 ${gradesPayload.length} 名学生，其中 ${graded} 名有成绩、${gradesPayload.length - graded} 名留空，确认保存？`
-  );
+  const ok = await SECD.confirmAction(`本次共提交 ${gradesPayload.length} 条成绩数据，确认保存？`);
   if (!ok) return;
 
   try {
