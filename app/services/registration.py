@@ -570,3 +570,11 @@ def close_registration(db: Session, *, semester_id: int) -> tuple[list[int], int
             jobs_created += 1
     db.commit()
     return sorted(no_teacher | under_minimum), jobs_created
+
+
+# 成员 4 的授课模块复用以下内部实现，保证锁顺序与时间冲突判断只有一个版本。
+lock_semester = _lock_semester
+require_open_semester = _require_open
+slots_conflict = _slots_conflict
+# 先修检查只读取当前有效成绩，成员 4 的成绩查询沿用同一实现
+passed_course_ids = _passed_course_ids
