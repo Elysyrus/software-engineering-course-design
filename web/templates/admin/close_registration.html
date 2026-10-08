@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% set active_nav = 'close' %}
+{% block title %}关闭选课{% endblock %}
+{% block content %}
+<div class="page-header"><h1 class="page-title">关闭选课</h1></div>
+<div class="card"><label class="form-label" for="semester-selector">选择学期</label><select class="form-select" id="semester-selector"></select><p id="semester-status"></p><p>关闭后禁止增退选与授课认领。系统处理无教师、人数不足班次及备选，再保存最终课表和学费。账单由独立后台进程发送，关闭成功不代表发送成功。</p><label class="form-label" for="confirm-phrase">输入 CLOSE-CONFIRM 确认关闭</label><input id="confirm-phrase" class="form-input" autocomplete="off"><button class="btn btn-danger" id="close-reg-btn" disabled>关闭选课并生成账单任务</button></div>
+{% endblock %}
+{% block scripts %}
+<script>
+let semester;
+document.addEventListener('DOMContentLoaded', async () => {
+  try { semester = await SECD.loadSemesters('semester-selector'); document.getElementById('semester-status').textContent = semester.status === 'open' ? '选课开放中' : '选课已关闭'; } catch(e) {}
+});
+document.getElementById('confirm-phrase').addEventListener('input', e => { document.getElementById('close-reg-btn').disabled = !semester || semester.status !== 'open' || e.target.value.trim() !== 'CLOSE-CONFIRM'; });
+document.getElementById('close-reg-btn').addEventListener('click', async () => {
+  if (!semester || !await SECD.confirmAction('确定关闭 '+semester.code+' 的选课吗？关闭后不能重新开放。')) return;
+  const button=document.getElementById('close-reg-btn'); button.disabled=true;
+  try { await SECD.request('/api/v1/admin/registration/close', {method:'POST', body:JSON.stringify({semester_id:semester.semester_id, confirmation:'CLOSE-CONFIRM'})}); window.location.href='/admin/closing-status?semester_id='+semester.semester_id; }
+  catch(e) { button.disabled=false; }
+});
+</script>{% endblock %}

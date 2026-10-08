@@ -11,15 +11,29 @@ class Base(DeclarativeBase):
 
 
 settings = get_settings()
-connect_args = {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
-engine = create_engine(settings.database_url, pool_pre_ping=True, connect_args=connect_args)
+connect_args = (
+    {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
+)
+engine_options = (
+    {"isolation_level": "READ COMMITTED"}
+    if settings.database_url.startswith("mysql")
+    else {}
+)
+engine = create_engine(
+    settings.database_url,
+    pool_pre_ping=True,
+    connect_args=connect_args,
+    **engine_options
+)
 
 if settings.database_url.startswith("sqlite"):
+
     @event.listens_for(engine, "connect")
     def _enable_sqlite_foreign_keys(dbapi_connection, _connection_record):
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
+
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
@@ -27,4 +41,3 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False
 def get_db() -> Generator[Session, None, None]:
     with SessionLocal() as session:
         yield session
-

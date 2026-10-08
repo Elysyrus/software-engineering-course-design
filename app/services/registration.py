@@ -7,6 +7,8 @@ from decimal import Decimal
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.exc import OperationalError
+from app.services.semesters import today
 
 from app.errors import BusinessError
 from app.models import (
@@ -23,9 +25,9 @@ from app.models import (
     Schedule,
     Semester,
     SemesterStatus,
+    Student,
 )
 from app.schemas import DraftChoiceInput
-
 
 PASSING_GRADES = {GradeValue.A, GradeValue.B, GradeValue.C, GradeValue.D}
 
@@ -34,42 +36,79 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-def _lock_semester(db: Session, semester_id: int, *, exclusive: bool = False) -> Semester:
-    stmt = select(Semester).where(Semester.id == semester_id).with_for_update(read=not exclusive)
-    semester = db.scalar(stmt)
+def _lock_semester(
+    db: Session, semester_id: int, *, exclusive: bool = False
+) -> Semester:
+    """
+    查找指定学期是否存在
+    """
+    stmt = (
+        select(Semester)
+        .where(Semester.id == semester_id)
+        .with_for_update(read=not exclusive)
+    )
+    if exclusive:
+        stmt = stmt.with_for_update(nowait=True)
+    try:
+        semester = db.scalar(stmt.execution_options(populate_existing=True))
+    except OperationalError as error:
+        if exclusive and getattr(error.orig, "args", [None])[0] in (1205, 1213, 3572):
+            db.rollback()
+            raise BusinessError(
+                "仍有选课或授课事务进行中，请稍后重试关闭", 409
+            ) from error
+        raise
     if semester is None:
         raise BusinessError("学期不存在", 404)
     return semester
 
 
 def _require_open(semester: Semester) -> None:
+    """
+    检查该学期选课是否关闭
+    """
     if semester.status != SemesterStatus.OPEN:
         raise BusinessError("本学期选课已经关闭")
 
 
 def _get_or_create_schedule(db: Session, student_id: int, semester_id: int) -> Schedule:
+    """
+    找到并返回原来的Schedule
+    如果没有，就创建一份新方案
+    """
+    # 同一学生同时首次创建方案时先锁档案，避免唯一键碰撞。
+    db.scalar(select(Student).where(Student.id == student_id).with_for_update())
     stmt = (
         select(Schedule)
         .where(Schedule.student_id == student_id, Schedule.semester_id == semester_id)
         .with_for_update()
+        .execution_options(populate_existing=True)
     )
     schedule = db.scalar(stmt)
     if schedule is None:
         schedule = Schedule(student_id=student_id, semester_id=semester_id)
         db.add(schedule)
-        db.flush()
+        db.flush()  # 把待执行的数据库操作发送给数据库，让新方案获得id
     return schedule
 
 
 def _check_version(schedule: Schedule, expected_version: int) -> None:
+    """
+    检查版本
+    """
     if schedule.version != expected_version:
         raise BusinessError("方案已在其他页面更新，请重新载入")
 
 
 def _validate_choice_shape(choices: list[DraftChoiceInput]) -> None:
+    """
+    检查草稿结构
+
+    """
     offering_ids = [choice.offering_id for choice in choices]
     if len(offering_ids) != len(set(offering_ids)):
         raise BusinessError("同一班次不能重复选择", 422)
+    # 按备选优先级排序，然后返回一个排序好的优先级列表
     priorities = sorted(
         choice.alternate_priority for choice in choices if choice.kind == "alternate"
     )
@@ -77,7 +116,12 @@ def _validate_choice_shape(choices: list[DraftChoiceInput]) -> None:
         raise BusinessError("备选优先级必须从 1 开始且连续", 422)
 
 
-def _load_offerings(db: Session, offering_ids: list[int], semester_id: int, *, lock: bool) -> dict[int, Offering]:
+def _load_offerings(
+    db: Session, offering_ids: list[int], semester_id: int, *, lock: bool
+) -> dict[int, Offering]:
+    """
+    检查所有班次
+    """
     if not offering_ids:
         return {}
     stmt = (
@@ -87,7 +131,7 @@ def _load_offerings(db: Session, offering_ids: list[int], semester_id: int, *, l
         .order_by(Offering.id)
     )
     if lock:
-        stmt = stmt.with_for_update()
+        stmt = stmt.with_for_update().execution_options(populate_existing=True)
     offerings = {offering.id: offering for offering in db.scalars(stmt).all()}
     if len(offerings) != len(set(offering_ids)):
         raise BusinessError("存在无效班次", 422)
@@ -115,6 +159,8 @@ def _passed_course_ids(db: Session, student_id: int, semester: Semester) -> set[
             Grade.student_id == student_id,
             Grade.value.in_(PASSING_GRADES),
             Semester.ends_on < semester.starts_on,
+            Semester.ends_on < today(),
+            Semester.status == SemesterStatus.CLOSED,
         )
     )
     return set(db.scalars(stmt).all())
@@ -128,6 +174,9 @@ def _validate_primaries(
     primaries: list[Offering],
     schedule_id: int,
 ) -> None:
+    """
+    检查所有主选
+    """
     course_ids = [offering.course_id for offering in primaries]
     if len(course_ids) != len(set(course_ids)):
         raise BusinessError("同一课程只能正式选择一个班次")
@@ -140,9 +189,9 @@ def _validate_primaries(
                 raise BusinessError(f"班次 {left.id} 与班次 {right.id} 上课时间冲突")
 
     required_rows = db.execute(
-        select(CoursePrerequisite.course_id, CoursePrerequisite.prerequisite_course_id).where(
-            CoursePrerequisite.course_id.in_(course_ids)
-        )
+        select(
+            CoursePrerequisite.course_id, CoursePrerequisite.prerequisite_course_id
+        ).where(CoursePrerequisite.course_id.in_(course_ids))
     ).all()
     passed = _passed_course_ids(db, student_id, semester)
     missing = defaultdict(list)
@@ -150,40 +199,53 @@ def _validate_primaries(
         if prerequisite_id not in passed:
             missing[course_id].append(prerequisite_id)
     if missing:
-        details = "; ".join(f"课程 {course}: 缺少 {ids}" for course, ids in sorted(missing.items()))
+        details = "; ".join(
+            f"课程 {course}: 缺少 {ids}" for course, ids in sorted(missing.items())
+        )
         raise BusinessError(f"先修课程未满足（{details}）")
 
-    counts = dict(
-        db.execute(
-            select(Enrollment.offering_id, func.count(Enrollment.id))
+    # MySQL REPEATABLE READ 下普通 COUNT 会读事务旧快照；锁定明细进行当前读。
+    counts = Counter(
+        db.scalars(
+            select(Enrollment.offering_id)
             .where(Enrollment.offering_id.in_([item.id for item in primaries]))
-            .group_by(Enrollment.offering_id)
+            .with_for_update()
         ).all()
     )
     existing_ids = set(
-        db.scalars(select(Enrollment.offering_id).where(Enrollment.schedule_id == schedule_id)).all()
+        db.scalars(
+            select(Enrollment.offering_id)
+            .where(Enrollment.schedule_id == schedule_id)
+            .with_for_update()
+        ).all()
     )
     for offering in primaries:
-        occupied_by_others = counts.get(offering.id, 0) - (1 if offering.id in existing_ids else 0)
+        occupied_by_others = counts.get(offering.id, 0) - (
+            1 if offering.id in existing_ids else 0
+        )
         if occupied_by_others >= offering.capacity:
             raise BusinessError(f"班次 {offering.id} 已满")
 
 
 def save_draft(
     db: Session,
-    *,
+    *,  # *表示后面的参数在传参的时候必须给出参数名
     student_id: int,
     semester_id: int,
-    expected_version: int,
-    choices: list[DraftChoiceInput],
+    expected_version: int,  # 页面读取到的方案版本
+    choices: list[DraftChoiceInput],  # 学生当前选择的所有主选和备选
 ) -> Schedule:
     _validate_choice_shape(choices)
     semester = _lock_semester(db, semester_id)
     _require_open(semester)
     schedule = _get_or_create_schedule(db, student_id, semester_id)
     _check_version(schedule, expected_version)
-    _load_offerings(db, [choice.offering_id for choice in choices], semester_id, lock=False)
-    db.execute(delete(DraftChoice).where(DraftChoice.schedule_id == schedule.id))
+    _load_offerings(
+        db, [choice.offering_id for choice in choices], semester_id, lock=False
+    )
+    db.execute(
+        delete(DraftChoice).where(DraftChoice.schedule_id == schedule.id)
+    )  # 删除所有属于当前选课方案的旧草稿记录
     for choice in choices:
         db.add(
             DraftChoice(
@@ -217,14 +279,22 @@ def get_schedule_view(db: Session, *, student_id: int, semester_id: int) -> dict
             "formal_alternates": [],
         }
     draft_rows = db.scalars(
-        select(DraftChoice).where(DraftChoice.schedule_id == schedule.id).order_by(DraftChoice.id)
+        select(DraftChoice)
+        .where(DraftChoice.schedule_id == schedule.id)
+        .order_by(DraftChoice.id)
+        .with_for_update()
     ).all()
     enrollment_rows = db.scalars(
-        select(Enrollment).where(Enrollment.schedule_id == schedule.id).order_by(Enrollment.offering_id)
+        select(Enrollment)
+        .where(Enrollment.schedule_id == schedule.id)
+        .order_by(Enrollment.offering_id)
     ).all()
     alternate_rows = db.scalars(
         select(FormalAlternate)
-        .where(FormalAlternate.schedule_id == schedule.id)
+        .where(
+            FormalAlternate.schedule_id == schedule.id,
+            FormalAlternate.consumed_at.is_(None),
+        )
         .order_by(FormalAlternate.priority)
     ).all()
     return {
@@ -246,7 +316,11 @@ def get_schedule_view(db: Session, *, student_id: int, semester_id: int) -> dict
             for row in enrollment_rows
         ],
         "formal_alternates": [
-            {"offering_id": row.offering_id, "kind": "alternate", "priority": row.priority}
+            {
+                "offering_id": row.offering_id,
+                "kind": "alternate",
+                "priority": row.priority,
+            }
             for row in alternate_rows
         ],
     }
@@ -259,22 +333,56 @@ def submit_schedule(
     semester_id: int,
     expected_version: int,
 ) -> Schedule:
+    """
+    正式提交保存好的草稿
+    """
     semester = _lock_semester(db, semester_id)
     _require_open(semester)
     schedule = _get_or_create_schedule(db, student_id, semester_id)
     _check_version(schedule, expected_version)
     draft = db.scalars(
-        select(DraftChoice).where(DraftChoice.schedule_id == schedule.id).order_by(DraftChoice.id)
+        select(DraftChoice)
+        .where(DraftChoice.schedule_id == schedule.id)
+        .order_by(DraftChoice.id)
+        .with_for_update()
     ).all()
+    # 挑出全部主选
     primary_rows = [row for row in draft if row.kind == ChoiceKind.PRIMARY]
+    # 挑出所有备选，并按alternate_priority排序
     alternate_rows = sorted(
         (row for row in draft if row.kind == ChoiceKind.ALTERNATE),
         key=lambda row: row.alternate_priority or 0,
     )
-    if not schedule.has_submitted and (len(primary_rows) != 4 or len(alternate_rows) != 2):
+    if not schedule.has_submitted and (
+        len(primary_rows) != 4 or len(alternate_rows) != 2
+    ):
         raise BusinessError("首次提交必须恰好包含 4 个主选和 2 个备选", 422)
     if schedule.has_submitted and (len(primary_rows) > 4 or len(alternate_rows) > 2):
         raise BusinessError("后续提交最多包含 4 个主选和 2 个备选", 422)
+    existing_primary = set(
+        db.scalars(
+            select(Enrollment.offering_id).where(Enrollment.schedule_id == schedule.id)
+        )
+    )
+    existing_alternates = [
+        (row.offering_id, row.priority)
+        for row in db.scalars(
+            select(FormalAlternate)
+            .where(FormalAlternate.schedule_id == schedule.id)
+            .order_by(FormalAlternate.priority)
+        )
+    ]
+    target_alternates = [
+        (row.offering_id, row.alternate_priority) for row in alternate_rows
+    ]
+    if (
+        schedule.has_submitted
+        and not schedule.is_deleted
+        and existing_primary == {row.offering_id for row in primary_rows}
+        and existing_alternates == target_alternates
+    ):
+        db.commit()
+        return schedule
     offerings = _load_offerings(
         db, [row.offering_id for row in draft], semester_id, lock=True
     )
@@ -288,7 +396,9 @@ def submit_schedule(
     )
 
     db.execute(delete(Enrollment).where(Enrollment.schedule_id == schedule.id))
-    db.execute(delete(FormalAlternate).where(FormalAlternate.schedule_id == schedule.id))
+    db.execute(
+        delete(FormalAlternate).where(FormalAlternate.schedule_id == schedule.id)
+    )
     for offering in primaries:
         db.add(
             Enrollment(
@@ -336,7 +446,8 @@ def drop_offering(
     db.delete(enrollment)
     db.execute(
         delete(DraftChoice).where(
-            DraftChoice.schedule_id == schedule.id, DraftChoice.offering_id == offering_id
+            DraftChoice.schedule_id == schedule.id,
+            DraftChoice.offering_id == offering_id,
         )
     )
     schedule.last_submitted_at = _utcnow()
@@ -357,12 +468,16 @@ def delete_schedule(
     schedule = _get_or_create_schedule(db, student_id, semester_id)
     _check_version(schedule, expected_version)
     offering_ids = list(
-        db.scalars(select(Enrollment.offering_id).where(Enrollment.schedule_id == schedule.id)).all()
+        db.scalars(
+            select(Enrollment.offering_id).where(Enrollment.schedule_id == schedule.id)
+        ).all()
     )
     _load_offerings(db, offering_ids, semester_id, lock=True)
     db.execute(delete(DraftChoice).where(DraftChoice.schedule_id == schedule.id))
     db.execute(delete(Enrollment).where(Enrollment.schedule_id == schedule.id))
-    db.execute(delete(FormalAlternate).where(FormalAlternate.schedule_id == schedule.id))
+    db.execute(
+        delete(FormalAlternate).where(FormalAlternate.schedule_id == schedule.id)
+    )
     schedule.is_deleted = True
     schedule.version += 1
     schedule.last_submitted_at = _utcnow()
@@ -371,24 +486,30 @@ def delete_schedule(
 
 
 def _enrollment_counts(db: Session, semester_id: int) -> Counter:
-    rows = db.execute(
-        select(Enrollment.offering_id, func.count(Enrollment.id))
+    rows = db.scalars(
+        select(Enrollment.offering_id)
         .join(Offering, Offering.id == Enrollment.offering_id)
         .where(Offering.semester_id == semester_id)
-        .group_by(Enrollment.offering_id)
+        .with_for_update()
     ).all()
-    return Counter(dict(rows))
+    return Counter(rows)
 
 
 def _cancel_offerings(db: Session, offering_ids: set[int]) -> Counter:
     lost = Counter()
     if not offering_ids:
         return lost
-    enrollments = db.scalars(select(Enrollment).where(Enrollment.offering_id.in_(offering_ids))).all()
+    enrollments = db.scalars(
+        select(Enrollment)
+        .where(Enrollment.offering_id.in_(offering_ids))
+        .with_for_update()
+    ).all()
     for enrollment in enrollments:
         lost[enrollment.schedule_id] += 1
         db.delete(enrollment)
-    for offering in db.scalars(select(Offering).where(Offering.id.in_(offering_ids))).all():
+    for offering in db.scalars(
+        select(Offering).where(Offering.id.in_(offering_ids))
+    ).all():
         offering.status = OfferingStatus.CANCELLED
     db.flush()
     return lost
@@ -409,6 +530,7 @@ def _try_level(
         .where(Schedule.id.in_(lost), Schedule.is_deleted.is_(False))
         .order_by(Schedule.last_submitted_at, Schedule.id)
         .with_for_update()
+        .execution_options(populate_existing=True)
     ).all()
     counts = _enrollment_counts(db, semester.id)
     for schedule in schedules:
@@ -433,13 +555,21 @@ def _try_level(
                 offering = offerings[alternate.offering_id]
                 if alternate.consumed_at is not None:
                     continue
-                if offering.status != OfferingStatus.OPEN or offering.teacher_id is None:
+                if (
+                    offering.status != OfferingStatus.OPEN
+                    or offering.teacher_id is None
+                ):
                     continue
                 if require_minimum and counts[offering.id] < 3:
                     continue
-                if counts[offering.id] >= offering.capacity or offering.course_id in enrolled_course_ids:
+                if (
+                    counts[offering.id] >= offering.capacity
+                    or offering.course_id in enrolled_course_ids
+                ):
                     continue
-                if any(_slots_conflict(offering, current) for current in enrolled_offerings):
+                if any(
+                    _slots_conflict(offering, current) for current in enrolled_offerings
+                ):
                     continue
                 try:
                     _validate_primaries(
@@ -472,7 +602,9 @@ def close_registration(db: Session, *, semester_id: int) -> tuple[list[int], int
     semester = _lock_semester(db, semester_id, exclusive=True)
     if semester.status == SemesterStatus.CLOSED:
         existing = db.scalar(
-            select(func.count(BillingJob.id)).where(BillingJob.semester_id == semester_id)
+            select(func.count(BillingJob.id)).where(
+                BillingJob.semester_id == semester_id
+            )
         )
         cancelled = list(
             db.scalars(
@@ -490,6 +622,7 @@ def close_registration(db: Session, *, semester_id: int) -> tuple[list[int], int
         .options(selectinload(Offering.course), selectinload(Offering.slots))
         .order_by(Offering.id)
         .with_for_update()
+        .execution_options(populate_existing=True)
     ).all()
     offerings = {offering.id: offering for offering in offerings_list}
     no_teacher = {item.id for item in offerings_list if item.teacher_id is None}
@@ -539,7 +672,9 @@ def close_registration(db: Session, *, semester_id: int) -> tuple[list[int], int
             .where(Enrollment.schedule_id == schedule.id)
             .order_by(Enrollment.offering_id)
         ).all()
-        amount = sum((offerings[row.offering_id].course.fee for row in rows), Decimal("0.00"))
+        amount = sum(
+            (offerings[row.offering_id].course.fee for row in rows), Decimal("0.00")
+        )
         snapshot = json.dumps(
             [
                 {
@@ -570,3 +705,11 @@ def close_registration(db: Session, *, semester_id: int) -> tuple[list[int], int
             jobs_created += 1
     db.commit()
     return sorted(no_teacher | under_minimum), jobs_created
+
+
+# 成员 4 的授课模块复用以下内部实现，保证锁顺序与时间冲突判断只有一个版本。
+lock_semester = _lock_semester
+require_open_semester = _require_open
+slots_conflict = _slots_conflict
+# 先修检查只读取当前有效成绩，成员 4 的成绩查询沿用同一实现
+passed_course_ids = _passed_course_ids

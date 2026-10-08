@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% set active_nav = "results" %}
+{% block title %}正式选课结果{% endblock %}
+{% block content %}
+<section id="student-workspace" data-mode="results">
+  <div class="page-header"><h1 class="page-title">正式选课结果</h1><div class="action-row"><button class="btn btn-danger" id="delete-schedule">删除整份方案</button></div></div>
+  <div class="card"><label for="semester-selector" class="form-label">学期</label><select id="semester-selector" class="form-select" aria-label="选择学期"></select><p id="semester-status" role="status"></p><p>正式主选占用名额，备选不占名额。主动退课留下的空缺不会自动补回。</p><p id="save-status" role="status"></p><p id="capacity-notice" class="status-note" role="alert"></p></div>
+  <div class="card"><h2 style="font-size:1.1rem">正式主选与备选</h2><div class="table-responsive"><table class="table"><thead><tr><th>课程 / 班次</th><th>课程信息</th><th>教师 / 时间</th><th>正式人数</th><th>选择类别 / 优先级</th><th>操作</th></tr></thead><tbody id="student-rows"><tr><td colspan="6">正在加载…</td></tr></tbody></table></div></div>
+</section>
+{% endblock %}
+{% block scripts %}<script src="/static/js/student.js"></script>{% endblock %}

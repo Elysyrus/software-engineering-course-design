@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% set active_nav = 'grades' %}
+{% block title %}期末成绩录入{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">期末学生成绩登记与提交</h1>
+  <div style="display:flex; gap:0.5rem; align-items:center;">
+    <select id="grade-section-selector" class="form-select" style="width: auto;" onchange="loadStudentsForGrading(this.value)">
+      <option value="">-- 选择班次录入成绩 --</option>
+    </select>
+    <button class="btn btn-primary" onclick="submitGrades()">保存并提交成绩</button>
+  </div>
+</div>
+
+<div class="card">
+  <div class="table-responsive">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>学号</th>
+          <th>姓名</th>
+          <th style="width: 180px;">成绩等级 (A ~ D 通过)</th>
+          <th>当前状态</th>
+          <th>最后更新人 / 时间</th>
+        </tr>
+      </thead>
+      <tbody id="grade-entry-body">
+        <tr><td colspan="5" class="empty-state">请选择需要进行成绩录入的教学班次。</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentGradingStudents = [];
+let activeSectionId = null;
+let canEdit = false;
+
+async function loadGradingSections() {
+  try {
+    const response = await SECD.request("/api/v1/teacher/gradable-sections");
+    const sections = ((response && response.offerings) || []).map(x=>({...x,id:x.offering_id}));
+    const sel = document.getElementById("grade-section-selector");
+    sel.innerHTML = `<option value="">-- 选择班次录入成绩 --</option>` + sections.map(s => `
+      <option value="${s.id}">#${s.id} -${SECD.escape(s.course_name)}</option>
+    `).join("");
+    if (sections.length > 0) {
+      sel.value = sections[0].id;
+      loadStudentsForGrading(sections[0].id);
+    }
+  } catch (err) {}
+}
+
+async function loadStudentsForGrading(sectionId) {
+  if (!sectionId) return;
+  activeSectionId = sectionId;
+  try {
+    const data = await SECD.request(`/api/v1/teacher/sections/${sectionId}/grades`);
+    canEdit = data.editable === true;
+    document.querySelector("button[onclick=\"submitGrades()\"]").disabled = !canEdit;
+    currentGradingStudents = (data && data.students) || [];
+    if (data && data.editable === false) {
+      SECD.showToast("该班次所在学期尚未结束，成绩只能录入已完成学期。", "warning");
+    }
+    const tbody = document.getElementById("grade-entry-body");
+    if (currentGradingStudents.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="5" class="empty-state">该班级下无学生名单</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = currentGradingStudents.map((s, idx) => `
+      <tr>
+        <td><strong>${SECD.escape(s.student_number)}</strong></td>
+        <td>${SECD.escape(s.full_name)}</td>
+        <td>
+          <select class="form-select grade-select" data-student-id="${s.student_id}"
+                  style="padding: 0.35rem 0.5rem;" ${canEdit ? '' : 'disabled'}>
+            <option value="" ${s.value === null ? 'selected' : ''}>留空</option>
+            ${["A", "B", "C", "D", "F", "I"].map(v =>
+              `<option value="${v}" ${s.value === v ? 'selected' : ''}>${v}</option>`).join("")}
+          </select>
+        </td>
+        <td>
+          <span class="role-badge ${s.value !== null ? 'role-student' : 'role-teacher'}">
+            ${s.value !== null ? '已评定' : '未评定'}
+          </span>
+        </td>
+        <td>${SECD.escape(s.updated_by ? s.updated_by + ' ' : '')}${SECD.escape(s.updated_at || '未提交')}</td>
+      </tr>
+    `).join("");
+  } catch (err) {
+    document.getElementById("grade-entry-body").innerHTML = `<tr><td colspan="5" class="empty-state">读取成绩失败</td></tr>`;
+  }
+}
+
+async function submitGrades() {
+  if (!activeSectionId || !canEdit) {
+    SECD.showToast("请先选择对应的教学班次", "warning");
+    return;
+  }
+  const selects = document.querySelectorAll(".grade-select");
+  // 空字符串表示留空，服务端会记录 "原成绩 -> 留空" 的变更
+  const gradesPayload = Array.from(selects).map(input => ({
+    student_id: parseInt(input.dataset.studentId),
+    value: input.value.trim() === "" ? null : input.value.trim()
+  }));
+
+  if (gradesPayload.length === 0) {
+    SECD.showToast("当前班次没有可录入的学生", "warning");
+    return;
+  }
+
+  const graded = gradesPayload.filter(item => item.value !== null).length;
+  const ok = await SECD.confirmAction(
+    `本次提交 ${gradesPayload.length} 名学生，其中 ${graded} 名有成绩、${gradesPayload.length - graded} 名留空，确认保存？`
+  );
+  if (!ok) return;
+
+  try {
+    await SECD.request(`/api/v1/teacher/sections/${activeSectionId}/grades`, {
+      method: "POST",
+      body: JSON.stringify({ grades: gradesPayload })
+    });
+    SECD.showToast("成绩录入提交成功！");
+    loadStudentsForGrading(activeSectionId);
+  } catch (err) {}
+}
+
+document.addEventListener("DOMContentLoaded", loadGradingSections);
+</script>
+{% endblock %}

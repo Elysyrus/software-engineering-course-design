@@ -1,0 +1,175 @@
+{
+  "semester_code": "2026-FALL",
+  "starts_on": "2026-09-01",
+  "ends_on": "2027-01-15",
+  "courses": [
+    {
+      "code": "FINAL001",
+      "name": "软件工程基础",
+      "description": "软件工程基础课程，演示数据。",
+      "department": "计算机学院",
+      "fee": "100.00",
+      "prerequisites": [],
+      "sections": [
+        {
+          "section_number": "01",
+          "capacity": 10,
+          "slots": [
+            {
+              "weekday": 1,
+              "start_period": 1,
+              "end_period": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "FINAL002",
+      "name": "数据库系统",
+      "description": "数据库系统课程，演示数据。",
+      "department": "计算机学院",
+      "fee": "100.00",
+      "prerequisites": [],
+      "sections": [
+        {
+          "section_number": "01",
+          "capacity": 10,
+          "slots": [
+            {
+              "weekday": 2,
+              "start_period": 1,
+              "end_period": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "FINAL003",
+      "name": "计算机网络",
+      "description": "计算机网络课程，演示数据。",
+      "department": "计算机学院",
+      "fee": "100.00",
+      "prerequisites": [],
+      "sections": [
+        {
+          "section_number": "01",
+          "capacity": 10,
+          "slots": [
+            {
+              "weekday": 3,
+              "start_period": 1,
+              "end_period": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "FINAL004",
+      "name": "操作系统",
+      "description": "操作系统课程，演示数据。",
+      "department": "计算机学院",
+      "fee": "100.00",
+      "prerequisites": [],
+      "sections": [
+        {
+          "section_number": "01",
+          "capacity": 10,
+          "slots": [
+            {
+              "weekday": 4,
+              "start_period": 1,
+              "end_period": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "FINAL005",
+      "name": "算法设计",
+      "description": "算法设计课程，演示数据。",
+      "department": "计算机学院",
+      "fee": "100.00",
+      "prerequisites": [],
+      "sections": [
+        {
+          "section_number": "01",
+          "capacity": 10,
+          "slots": [
+            {
+              "weekday": 5,
+              "start_period": 1,
+              "end_period": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "FINAL006",
+      "name": "人工智能导论",
+      "description": "人工智能导论课程，演示数据。",
+      "department": "计算机学院",
+      "fee": "100.00",
+      "prerequisites": [],
+      "sections": [
+        {
+          "section_number": "01",
+          "capacity": 10,
+          "slots": [
+            {
+              "weekday": 1,
+              "start_period": 3,
+              "end_period": 4
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "FINAL007",
+      "name": "数据挖掘",
+      "description": "数据挖掘课程，演示数据。",
+      "department": "计算机学院",
+      "fee": "100.00",
+      "prerequisites": [],
+      "sections": [
+        {
+          "section_number": "01",
+          "capacity": 10,
+          "slots": [
+            {
+              "weekday": 2,
+              "start_period": 3,
+              "end_period": 4
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "FINAL008",
+      "name": "自然语言处理",
+      "description": "自然语言处理课程，演示数据。",
+      "department": "计算机学院",
+      "fee": "100.00",
+      "prerequisites": [],
+      "sections": [
+        {
+          "section_number": "01",
+          "capacity": 10,
+          "slots": [
+            {
+              "weekday": 3,
+              "start_period": 3,
+              "end_period": 4
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

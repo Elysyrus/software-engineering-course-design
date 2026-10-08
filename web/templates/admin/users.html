@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% set active_nav = 'users' %}
+{% block title %}师生资料管理{% endblock %}
+{% block content %}
+<div class="page-header"><h1 class="page-title">师生资料与账号管理</h1><button class="btn btn-primary" id="create-person">新增师生</button></div>
+<div class="card"><label class="form-label" for="user-search">按姓名 / 编号查找</label><input class="form-input" id="user-search"><p>账号启停控制登录权限；档案状态记录在读、休学、毕业等业务情况。有业务历史的人员删除时会停用并保留记录。</p><div class="table-responsive"><table class="table"><thead><tr><th>编号 / 姓名</th><th>角色 / 院系</th><th>出生日期 / 社会保障号码</th><th>档案状态 / 毕业日期</th><th>登录权限</th><th>操作</th></tr></thead><tbody id="user-list-body"></tbody></table></div></div>
+<div id="person-modal" class="modal-backdrop"><div class="modal" style="max-width:760px;max-height:85vh;overflow:auto"><h2 id="person-title" style="font-size:1.2rem">新增师生</h2><form id="person-form"><div class="profile-grid">
+<div class="form-group"><label class="form-label" for="person-name">姓名</label><input class="form-input" id="person-name" required maxlength="100"></div>
+<div class="form-group"><label class="form-label" for="person-role">角色</label><select class="form-select" id="person-role"><option value="student">学生</option><option value="teacher">教师</option></select></div>
+<div class="form-group"><label class="form-label" for="person-birth">出生日期</label><input class="form-input" id="person-birth" type="date"></div>
+<div class="form-group"><label class="form-label" for="person-ssn">社会保障号码（演示使用虚构资料）</label><input class="form-input" id="person-ssn" maxlength="32"></div>
+<div class="form-group"><label class="form-label" for="person-status">档案状态</label><select class="form-select" id="person-status"><option value="active">在读 / 在职</option><option value="on_leave">休学 / 休假</option><option value="graduated">已毕业</option><option value="retired">已退休</option></select></div>
+<div class="form-group"><label class="form-label" for="person-department">教师院系</label><input class="form-input" id="person-department" maxlength="100"></div>
+<div class="form-group"><label class="form-label" for="person-graduation">学生毕业日期</label><input class="form-input" id="person-graduation" type="date"></div>
+</div><div class="action-row"><button class="btn btn-primary" type="submit">保存资料</button><button class="btn btn-secondary" type="button" id="cancel-person">取消</button></div></form></div></div>
+{% endblock %}
+{% block scripts %}<script src="/static/js/personnel.js"></script>{% endblock %}

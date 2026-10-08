@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% set active_nav = 'status' %}
+{% block title %}关闭结果与账单状态{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">选课决算结果与账单推送状态</h1>
+  <div class="action-row"><button class="btn btn-outline btn-sm" onclick="loadClosingSummary()">刷新进度</button><button class="btn btn-primary btn-sm" onclick="dispatchBills()">立即派发到期账单</button></div>
+</div>
+
+<div class="card"><label class="form-label" for="semester-selector">学期</label><select class="form-select" id="semester-selector"></select><p>失败任务按间隔自动重试；修复无法重试的外部错误后可重新排队。</p></div>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 1.25rem;">
+  <div class="card" style="margin-bottom:0;">
+    <div style="color:var(--text-muted); font-size:0.85rem;">已成班教学班</div>
+    <div style="font-size:1.6rem; font-weight:700; color:var(--success);" id="stat-opened">-</div>
+  </div>
+  <div class="card" style="margin-bottom:0;">
+    <div style="color:var(--text-muted); font-size:0.85rem;">取消班次（无教师或人数不足）</div>
+    <div style="font-size:1.6rem; font-weight:700; color:var(--danger);" id="stat-cancelled">-</div>
+  </div>
+  <div class="card" style="margin-bottom:0;">
+    <div style="color:var(--text-muted); font-size:0.85rem;">学生选课总人次</div>
+    <div style="font-size:1.6rem; font-weight:700; color:var(--primary);" id="stat-enrolled">-</div>
+  </div>
+  <div class="card" style="margin-bottom:0;">
+    <div style="color:var(--text-muted); font-size:0.85rem;">财务账单同步状态</div>
+    <div style="font-size:1.2rem; font-weight:700;" id="stat-billing">-</div>
+  </div>
+</div>
+
+<div class="card">
+  <h3 style="font-size: 1.1rem; margin-bottom: 0.75rem;">学生账单发送记录与明细</h3>
+  <div class="table-responsive">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>账单编号</th>
+          <th>学号</th>
+          <th>姓名</th>
+          <th>选中门数</th>
+          <th>应缴学费 (¥)</th>
+          <th>账单发送状态</th>
+          <th>发送时间 / 最近错误</th><th>恢复</th>
+        </tr>
+      </thead>
+      <tbody id="billing-body">
+        <tr><td colspan="8" class="empty-state">正在查询最新推送状态...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let activeSemester;
+async function loadClosingSummary() {
+  if (!activeSemester) return;
+  try {
+    const res = await SECD.request("/api/v1/admin/registration/closing-status?semester_id=" + activeSemester.semester_id);
+    document.getElementById("stat-opened").innerText = res.opened_sections_count ?? 0;
+    document.getElementById("stat-cancelled").innerText = res.cancelled_sections_count ?? 0;
+    document.getElementById("stat-enrolled").innerText = res.total_enrolled_count ?? 0;
+
+    const bStat = document.getElementById("stat-billing");
+    if (res.billing_status === "ALL_SENT") {
+      bStat.innerHTML = `<span style="color:var(--success)">全部发送成功</span>`;
+    } else if (res.billing_status === "PARTIAL_FAIL") {
+      bStat.innerHTML = `<span style="color:var(--danger)">部分推送失败</span>`;
+    } else {
+      bStat.innerHTML = `<span style="color:var(--warning)">推送处理中...</span>`;
+    }
+
+    const tbody = document.getElementById("billing-body");
+    const bills = res.bills || [];
+    if (bills.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="8" class="empty-state">尚未产生学生缴费账单记录。</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = bills.map(b => `
+      <tr>
+        <td><strong>#${b.bill_id}</strong></td>
+        <td>${SECD.escape(b.student_number)}</td>
+        <td>${SECD.escape(b.student_name)}</td>
+        <td>${b.enrolled_count} 门</td>
+        <td>¥ ${Number(b.amount).toFixed(2)}</td>
+        <td>
+          <span class="role-badge ${b.status === 'SENT' ? 'role-student' : 'role-teacher'}">
+            ${b.status === 'SENT' ? '发送成功' : (b.status === 'FAILED' ? '发送失败' : '排队中')}
+          </span>
+        </td>
+        <td>${SECD.escape(b.sent_at || '-')}<br>${SECD.escape(b.last_error || '')}</td><td>${b.status === 'FAILED' ? '<button class="btn btn-sm btn-outline" onclick="retryBill('+b.bill_id+')">重新排队</button>' : '-'}</td>
+      </tr>
+    `).join("");
+  } catch (err) {
+    document.getElementById("billing-body").innerHTML = `<tr><td colspan="8" class="empty-state">获取状态数据失败</td></tr>`;
+  }
+}
+
+async function dispatchBills() {
+  try { const result=await SECD.request('/api/v1/registrar/billing/dispatch',{method:'POST'}); SECD.showToast('本次发送成功 '+result.sent+' 条，失败 '+result.failed+' 条'); await loadClosingSummary(); } catch(e) {}
+}
+async function retryBill(id) {
+  if (!await SECD.confirmAction('确认修复外部问题后，重新排队此账单？')) return;
+  try { await SECD.request('/api/v1/registrar/billing/jobs/'+id+'/retry',{method:'POST'}); await loadClosingSummary(); } catch(e) {}
+}
+document.addEventListener('DOMContentLoaded', async () => {
+  try { activeSemester=await SECD.loadSemesters('semester-selector'); SECD.startPolling(loadClosingSummary,6000); } catch(e) {}
+});
+</script>
+{% endblock %}
