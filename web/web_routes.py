@@ -3,7 +3,8 @@ from typing import List, Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel, Field
+from datetime import date
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -46,23 +47,37 @@ web_router = APIRouter(include_in_schema=False)
 # 1. 页面直达路由
 # ========================================================
 
+
 @web_router.get("/")
 async def root():
     return RedirectResponse(url="/login")
 
+
 @web_router.get("/login")
 async def page_login(request: Request):
-    return templates.TemplateResponse("auth/login.html", {"request": request, "user": None})
+    return templates.TemplateResponse(
+        request=request,
+        name="auth/login.html",
+        context={"request": request, "user": None},
+    )
 
 
 def _template_user(db: Session, user: CurrentUser) -> dict[str, str | int]:
     """把可信身份转换为模板显示所需的最小公开资料。"""
     if user.role == "student":
         student = db.get(Student, user.subject_id)
-        return {"username": student.student_number, "full_name": student.name, "role": "student"}
+        return {
+            "username": student.student_number,
+            "full_name": student.name,
+            "role": "student",
+        }
     if user.role == "teacher":
         teacher = db.get(Teacher, user.subject_id)
-        return {"username": teacher.teacher_number, "full_name": teacher.name, "role": "teacher"}
+        return {
+            "username": teacher.teacher_number,
+            "full_name": teacher.name,
+            "role": "teacher",
+        }
     return {"username": "registrar", "full_name": "教务管理员", "role": "registrar"}
 
 
@@ -72,85 +87,230 @@ async def page_change_password(
     user: CurrentUser = Depends(current_user_for_password_change),
     db: Session = Depends(get_db),
 ):
-    return templates.TemplateResponse("auth/change_password.html", {"request": request, "user": _template_user(db, user)})
+    return templates.TemplateResponse(
+        request=request,
+        name="auth/change_password.html",
+        context={"request": request, "user": _template_user(db, user)},
+    )
+
 
 @web_router.get("/student/courses")
-async def page_student_courses(request: Request, user: CurrentUser = Depends(current_user), db: Session = Depends(get_db)):
+async def page_student_courses(
+    request: Request,
+    user: CurrentUser = Depends(current_user),
+    db: Session = Depends(get_db),
+):
     require_student(user)
-    return templates.TemplateResponse("student/courses.html", {"request": request, "user": _template_user(db, user), "active_nav": "courses"})
+    return templates.TemplateResponse(
+        request=request,
+        name="student/courses.html",
+        context={
+            "request": request,
+            "user": _template_user(db, user),
+            "active_nav": "courses",
+        },
+    )
+
 
 @web_router.get("/student/draft")
-async def page_student_draft(request: Request, user: CurrentUser = Depends(current_user), db: Session = Depends(get_db)):
+async def page_student_draft(
+    request: Request,
+    user: CurrentUser = Depends(current_user),
+    db: Session = Depends(get_db),
+):
     require_student(user)
-    return templates.TemplateResponse("student/draft.html", {"request": request, "user": _template_user(db, user), "active_nav": "draft"})
+    return templates.TemplateResponse(
+        request=request,
+        name="student/draft.html",
+        context={
+            "request": request,
+            "user": _template_user(db, user),
+            "active_nav": "draft",
+        },
+    )
+
 
 @web_router.get("/student/results")
-async def page_student_results(request: Request, user: CurrentUser = Depends(current_user), db: Session = Depends(get_db)):
+async def page_student_results(
+    request: Request,
+    user: CurrentUser = Depends(current_user),
+    db: Session = Depends(get_db),
+):
     require_student(user)
-    return templates.TemplateResponse("student/results.html", {"request": request, "user": _template_user(db, user), "active_nav": "results"})
+    return templates.TemplateResponse(
+        request=request,
+        name="student/results.html",
+        context={
+            "request": request,
+            "user": _template_user(db, user),
+            "active_nav": "results",
+        },
+    )
+
 
 @web_router.get("/student/grades")
-async def page_student_grades(request: Request, user: CurrentUser = Depends(current_user), db: Session = Depends(get_db)):
+async def page_student_grades(
+    request: Request,
+    user: CurrentUser = Depends(current_user),
+    db: Session = Depends(get_db),
+):
     require_student(user)
-    return templates.TemplateResponse("student/grades.html", {"request": request, "user": _template_user(db, user), "active_nav": "grades"})
+    return templates.TemplateResponse(
+        request=request,
+        name="student/grades.html",
+        context={
+            "request": request,
+            "user": _template_user(db, user),
+            "active_nav": "grades",
+        },
+    )
+
 
 @web_router.get("/teacher/claim")
-async def page_teacher_claim(request: Request, user: CurrentUser = Depends(current_user), db: Session = Depends(get_db)):
+async def page_teacher_claim(
+    request: Request,
+    user: CurrentUser = Depends(current_user),
+    db: Session = Depends(get_db),
+):
     require_teacher(user)
-    return templates.TemplateResponse("teacher/claim.html", {"request": request, "user": _template_user(db, user), "active_nav": "claim"})
+    return templates.TemplateResponse(
+        request=request,
+        name="teacher/claim.html",
+        context={
+            "request": request,
+            "user": _template_user(db, user),
+            "active_nav": "claim",
+        },
+    )
+
 
 @web_router.get("/teacher/roster")
-async def page_teacher_roster(request: Request, user: CurrentUser = Depends(current_user), db: Session = Depends(get_db)):
+async def page_teacher_roster(
+    request: Request,
+    user: CurrentUser = Depends(current_user),
+    db: Session = Depends(get_db),
+):
     require_teacher(user)
-    return templates.TemplateResponse("teacher/roster.html", {"request": request, "user": _template_user(db, user), "active_nav": "roster"})
+    return templates.TemplateResponse(
+        request=request,
+        name="teacher/roster.html",
+        context={
+            "request": request,
+            "user": _template_user(db, user),
+            "active_nav": "roster",
+        },
+    )
+
 
 @web_router.get("/teacher/grades")
-async def page_teacher_grades(request: Request, user: CurrentUser = Depends(current_user), db: Session = Depends(get_db)):
+async def page_teacher_grades(
+    request: Request,
+    user: CurrentUser = Depends(current_user),
+    db: Session = Depends(get_db),
+):
     require_teacher(user)
-    return templates.TemplateResponse("teacher/grades.html", {"request": request, "user": _template_user(db, user), "active_nav": "grades"})
+    return templates.TemplateResponse(
+        request=request,
+        name="teacher/grades.html",
+        context={
+            "request": request,
+            "user": _template_user(db, user),
+            "active_nav": "grades",
+        },
+    )
+
 
 @web_router.get("/admin/users")
-async def page_admin_users(request: Request, user: CurrentUser = Depends(current_user), db: Session = Depends(get_db)):
+async def page_admin_users(
+    request: Request,
+    user: CurrentUser = Depends(current_user),
+    db: Session = Depends(get_db),
+):
     require_registrar(user)
-    return templates.TemplateResponse("admin/users.html", {"request": request, "user": _template_user(db, user), "active_nav": "users"})
+    return templates.TemplateResponse(
+        request=request,
+        name="admin/users.html",
+        context={
+            "request": request,
+            "user": _template_user(db, user),
+            "active_nav": "users",
+        },
+    )
+
 
 @web_router.get("/admin/close-registration")
-async def page_admin_close(request: Request, user: CurrentUser = Depends(current_user), db: Session = Depends(get_db)):
+async def page_admin_close(
+    request: Request,
+    user: CurrentUser = Depends(current_user),
+    db: Session = Depends(get_db),
+):
     require_registrar(user)
-    return templates.TemplateResponse("admin/close_registration.html", {"request": request, "user": _template_user(db, user), "active_nav": "close"})
+    return templates.TemplateResponse(
+        request=request,
+        name="admin/close_registration.html",
+        context={
+            "request": request,
+            "user": _template_user(db, user),
+            "active_nav": "close",
+        },
+    )
+
 
 @web_router.get("/admin/closing-status")
-async def page_admin_status(request: Request, user: CurrentUser = Depends(current_user), db: Session = Depends(get_db)):
+async def page_admin_status(
+    request: Request,
+    user: CurrentUser = Depends(current_user),
+    db: Session = Depends(get_db),
+):
     require_registrar(user)
-    return templates.TemplateResponse("admin/closing_status.html", {"request": request, "user": _template_user(db, user), "active_nav": "status"})
+    return templates.TemplateResponse(
+        request=request,
+        name="admin/closing_status.html",
+        context={
+            "request": request,
+            "user": _template_user(db, user),
+            "active_nav": "status",
+        },
+    )
 
 
 # ========================================================
-# 2. 配套测试接口 (响应前端页面内发起的 fetch 请求)
+# 2. 正式认证与人员管理接口
 # ========================================================
+
 
 class LoginReq(BaseModel):
     username: str
     password: str
 
+
 class ChangePwdReq(BaseModel):
     old_password: str
     new_password: str
 
-class DraftItemReq(BaseModel):
-    section_id: int
 
-class SubmitRegistrationReq(BaseModel):
-    version: int
-    ordered_section_ids: List[int]
+class PersonnelFields(BaseModel):
+    birth_date: date | None = None
+    social_security_number: str | None = Field(default=None, max_length=32)
+    status: Literal["active", "on_leave", "graduated", "retired"] | None = None
+    graduation_date: date | None = None
 
-class CreateUserReq(BaseModel):
+    @field_validator("birth_date")
+    @classmethod
+    def valid_birth(cls, value):
+        if value is not None and value > date.today():
+            raise ValueError("出生日期不能在未来")
+        return value
+
+
+class CreateUserReq(PersonnelFields):
     full_name: str = Field(min_length=1, max_length=100)
     role: Literal["student", "teacher"]
     department: str | None = Field(default=None, max_length=100)
+    status: Literal["active", "on_leave", "graduated", "retired"] = "active"
 
 
-class UpdateUserReq(BaseModel):
+class UpdateUserReq(PersonnelFields):
     full_name: str | None = Field(default=None, min_length=1, max_length=100)
     department: str | None = Field(default=None, max_length=100)
 
@@ -158,26 +318,16 @@ class UpdateUserReq(BaseModel):
 class AccountStatusReq(BaseModel):
     is_active: bool
 
-class CloseReq(BaseModel):
-
-    confirmation: str
-
-MOCK_STATE = {
-    "draft_version": 1,
-    "draft_items": [
-        {"section_id": 101, "course_code": "CS101", "course_name": "面向对象软件工程", "teacher_name": "张教授", "schedule_time": "周一 08:00-09:40"},
-        {"section_id": 201, "course_code": "CS202", "course_name": "操作系统原理", "teacher_name": "李副教授", "schedule_time": "周二 10:00-11:40"},
-        {"section_id": 301, "course_code": "CS303", "course_name": "分布式数据库系统", "teacher_name": "王教授", "schedule_time": "周三 13:30-15:10"},
-        {"section_id": 401, "course_code": "CS404", "course_name": "编译原理与技术", "teacher_name": "赵教授", "schedule_time": "周四 15:30-17:10"},
-    ],
-    "results": []
-}
 
 def _set_auth_cookies(response: Response, session: ServerSession) -> None:
     """会话 ID 仅由服务器读取；CSRF 值供同源页面写请求提交。"""
     secure = get_settings().app_env != "development"
-    response.set_cookie("session_id", session.id, httponly=True, samesite="lax", secure=secure)
-    response.set_cookie("csrf_token", session.csrf_token, httponly=False, samesite="lax", secure=secure)
+    response.set_cookie(
+        "session_id", session.id, httponly=True, samesite="lax", secure=secure
+    )
+    response.set_cookie(
+        "csrf_token", session.csrf_token, httponly=False, samesite="lax", secure=secure
+    )
 
 
 def _validate_request_csrf(db: Session, request: Request) -> None:
@@ -207,15 +357,21 @@ async def api_login(req: LoginReq, db: Session = Depends(get_db)):
     _set_auth_cookies(response, session)
     return response
 
+
 @web_router.post("/api/v1/auth/change-password")
-async def api_change_password(req: ChangePwdReq, request: Request, db: Session = Depends(get_db)):
+async def api_change_password(
+    req: ChangePwdReq, request: Request, db: Session = Depends(get_db)
+):
     session_id = request.cookies.get("session_id")
     if session_id is None:
         raise HTTPException(status_code=401, detail="未登录")
     account = get_session_account(db, session_id, allow_password_change=True)
     session = db.get(ServerSession, session_id)
     validate_csrf(session, request.headers.get("X-CSRF-Token"))
-    change_password(db, account, req.old_password, req.new_password)
+    try:
+        change_password(db, account, req.old_password, req.new_password)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
     response = JSONResponse({"message": "密码修改成功，请重新登录"})
     response.delete_cookie("session_id")
     response.delete_cookie("csrf_token")
@@ -236,57 +392,6 @@ async def api_logout(request: Request, db: Session = Depends(get_db)):
     response.delete_cookie("csrf_token")
     return response
 
-@web_router.get("/api/v1/student/available-sections")
-async def api_available_sections():
-    return [
-        {"id": 101, "course_code": "CS101", "course_name": "面向对象软件工程", "credits": 4.0, "teacher_name": "张教授", "schedule_time": "周一 08:00-09:40", "classroom": "正新楼 301", "capacity": 30, "enrolled_count": 28},
-        {"id": 201, "course_code": "CS202", "course_name": "操作系统原理", "credits": 3.5, "teacher_name": "李副教授", "schedule_time": "周二 10:00-11:40", "classroom": "王湘浩楼 B108", "capacity": 35, "enrolled_count": 35},
-        {"id": 301, "course_code": "CS303", "course_name": "分布式数据库系统", "credits": 3.0, "teacher_name": "王教授", "schedule_time": "周三 13:30-15:10", "classroom": "正新楼 202", "capacity": 40, "enrolled_count": 16},
-        {"id": 401, "course_code": "CS404", "course_name": "编译原理与技术", "credits": 3.5, "teacher_name": "赵教授", "schedule_time": "周四 15:30-17:10", "classroom": "正新楼 102", "capacity": 30, "enrolled_count": 12},
-        {"id": 501, "course_code": "CS505", "course_name": "计算机系统结构", "credits": 3.0, "teacher_name": "孙老师", "schedule_time": "周五 08:00-09:40", "classroom": "正新楼 405", "capacity": 30, "enrolled_count": 5}
-    ]
-
-@web_router.get("/api/v1/student/draft")
-async def api_get_draft():
-    return {"version": MOCK_STATE["draft_version"], "items": MOCK_STATE["draft_items"]}
-
-@web_router.post("/api/v1/student/draft/items")
-async def api_add_draft_item(req: DraftItemReq):
-    if any(item["section_id"] == req.section_id for item in MOCK_STATE["draft_items"]):
-        raise HTTPException(status_code=400, detail="该班次已在草稿箱中")
-    MOCK_STATE["draft_items"].append({
-        "section_id": req.section_id,
-        "course_code": f"CS{req.section_id}",
-        "course_name": "新增选修课程",
-        "teacher_name": "主讲教师",
-        "schedule_time": "待安排"
-    })
-    MOCK_STATE["draft_version"] += 1
-    return {"message": "已添加"}
-
-@web_router.delete("/api/v1/student/draft/items/{section_id}")
-async def api_remove_draft_item(section_id: int):
-    MOCK_STATE["draft_items"] = [x for x in MOCK_STATE["draft_items"] if x["section_id"] != section_id]
-    MOCK_STATE["draft_version"] += 1
-    return {"message": "已移除"}
-
-@web_router.post("/api/v1/student/registration/submit")
-async def api_submit_registration(req: SubmitRegistrationReq):
-    if req.version != MOCK_STATE["draft_version"]:
-        raise HTTPException(status_code=409, detail="草稿版本冲突，请刷新获取最新列表")
-    MOCK_STATE["results"] = [
-        {"section_id": sid, "course_code": f"CS{sid}", "course_name": f"核心课程-{sid}", "credits": 3.5, "teacher_name": "张教授", "schedule_time": "周一 08:00-09:40", "classroom": "正新楼", "status": "ENROLLED"}
-        for sid in req.ordered_section_ids[:4]
-    ]
-    return {"message": "提交成功"}
-
-@web_router.get("/api/v1/student/registration/results")
-async def api_get_results():
-    return MOCK_STATE["results"]
-
-# 成员 4 的教师授课、成绩与学生成绩接口已改为真实实现，见 app/routers/teaching.py：
-#   /api/v1/teacher/claimable-sections、/api/v1/teacher/my-sections、
-#   /api/v1/teacher/sections/{id}/claim|unclaim|roster|grades、/api/v1/student/grades
 
 @web_router.get("/api/v1/admin/users")
 async def api_get_users(
@@ -294,7 +399,6 @@ async def api_get_users(
     db: Session = Depends(get_db),
 ):
     return list_users_for_registrar(db)
-
 
 
 ### 教务创建学生或教师账号
@@ -308,8 +412,15 @@ async def api_create_user(
     """教务创建师生资料与账号；登录编号始终由后端分配。"""
     _validate_request_csrf(db, request)
 
+    profile = req.model_dump(exclude={"full_name", "role", "department"})
+    if req.graduation_date and req.birth_date and req.graduation_date < req.birth_date:
+        raise HTTPException(status_code=422, detail="毕业日期不能早于出生日期")
+    if req.role == "teacher" and req.graduation_date is not None:
+        raise HTTPException(status_code=422, detail="教师不能设置毕业日期")
+    if not req.full_name.strip():
+        raise HTTPException(status_code=422, detail="姓名不能为空")
     if req.role == "student":
-        student = create_student(db, req.full_name, "Initial123")
+        student = create_student(db, req.full_name.strip(), "Initial123", **profile)
         account_id = db.scalar(
             select(Account.id).where(
                 Account.role == AccountRole.STUDENT,
@@ -325,7 +436,9 @@ async def api_create_user(
 
     if not req.department or not req.department.strip():
         raise HTTPException(status_code=422, detail="教师必须填写院系")
-    teacher = create_teacher(db, req.full_name, req.department.strip(), "Initial123")
+    teacher = create_teacher(
+        db, req.full_name.strip(), req.department.strip(), "Initial123", **profile
+    )
     account_id = db.scalar(
         select(Account.id).where(
             Account.role == AccountRole.TEACHER,
@@ -338,6 +451,7 @@ async def api_create_user(
         "role": "teacher",
         "message": "教师账号创建成功",
     }
+
 
 @web_router.get("/api/v1/admin/users/{account_id}")
 async def api_get_user(
@@ -366,6 +480,7 @@ async def api_update_user(
             account_id,
             full_name=req.full_name,
             department=req.department,
+            **req.model_dump(exclude={"full_name", "department"}, exclude_unset=True),
         )
     except ValueError as error:
         _personnel_http_error(error)
@@ -383,7 +498,10 @@ async def api_delete_user(
         action = delete_user_for_registrar(db, account_id)
     except ValueError as error:
         _personnel_http_error(error)
-    return {"action": action, "message": "人员已删除" if action == "deleted" else "人员已停用"}
+    return {
+        "action": action,
+        "message": "人员已删除" if action == "deleted" else "人员已停用",
+    }
 
 
 @web_router.post("/api/v1/admin/users/{account_id}/reset-password")
@@ -414,22 +532,3 @@ async def api_set_user_status(
         return set_account_status(db, account_id, req.is_active)
     except ValueError as error:
         _personnel_http_error(error)
-
-@web_router.post("/api/v1/admin/registration/close")
-async def api_close_registration(req: CloseReq):
-    if req.confirmation != "CLOSE-CONFIRM":
-        raise HTTPException(status_code=400, detail="确认口令不正确")
-    return {"message": "选课已关闭"}
-
-@web_router.get("/api/v1/admin/registration/closing-status")
-async def api_closing_status():
-    return {
-        "opened_sections_count": 8,
-        "cancelled_sections_count": 1,
-        "total_enrolled_count": 182,
-        "billing_status": "ALL_SENT",
-        "bills": [
-            {"bill_id": 9001, "student_number": "2024001", "student_name": "张三", "enrolled_count": 4, "amount": 4800.0, "status": "SENT", "sent_at": "2026-09-10 16:30"},
-            {"bill_id": 9002, "student_number": "2024002", "student_name": "李四", "enrolled_count": 4, "amount": 4800.0, "status": "SENT", "sent_at": "2026-09-10 16:30"}
-        ]
-    }

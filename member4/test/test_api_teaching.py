@@ -139,7 +139,11 @@ def test_real_app_serves_page_paths_from_member4_router():
     assert not hasattr(web_routes, "api_submit_grades")
 
     # 学生选课相关的模拟接口不属于成员 4，保持原样
-    assert hasattr(web_routes, "api_get_results")
+    assert not hasattr(web_routes, "api_get_results")
+    assert (
+        endpoints["/api/v1/student/draft"].__module__
+        == "app.routers.registration_pages"
+    )
 
     # 真实 REST 风格接口仍然保留
     assert "/api/v1/teacher/offerings/{offering_id}/claim" in endpoints

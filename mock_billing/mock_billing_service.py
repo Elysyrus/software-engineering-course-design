@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import threading
 import time
 from datetime import UTC, datetime
@@ -104,7 +105,13 @@ class BillingStore:
 
 
 app = FastAPI(title="SECD 计费模拟接收服务")
-store = BillingStore()
+from mock_billing.persistent_store import PersistentBillingStore
+
+store = (
+    PersistentBillingStore(os.environ["MOCK_BILLING_DATABASE"])
+    if os.getenv("MOCK_BILLING_DATABASE")
+    else BillingStore()
+)
 
 
 def _inject_fault(fault: str, timeout_seconds: float) -> None:
@@ -120,7 +127,9 @@ def _inject_fault(fault: str, timeout_seconds: float) -> None:
 def receive_charge(
     request: ChargeRequest,
     response: Response,
-    fault: str = Query(default="none", description="故障注入: none | 503 | 500 | timeout"),
+    fault: str = Query(
+        default="none", description="故障注入: none | 503 | 500 | timeout"
+    ),
     timeout_seconds: float = Query(default=5.0, ge=0, le=60),
 ):
     """接收账单；重复发送同一账单返回既有结果，不重复收费。"""

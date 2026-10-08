@@ -24,7 +24,6 @@ from app.services.teaching import (
     list_student_grades,
 )
 
-
 GRADE_VALUES = (
     GradeValue.A,
     GradeValue.B,
@@ -44,7 +43,8 @@ def graded_scenario(db, seed_basic) -> SimpleNamespace:
     - student 1 在开放学期的 DEMO103 也有一条成绩，用于验证先修检查只认同期之前。
     """
     students = list(seed_basic.students) + [
-        Student(student_number=f"2026000{index}", name=f"学生{index}") for index in range(4, 7)
+        Student(student_number=f"2026000{index}", name=f"学生{index}")
+        for index in range(4, 7)
     ]
     db.add_all(students[3:])
     db.flush()
@@ -54,7 +54,7 @@ def graded_scenario(db, seed_basic) -> SimpleNamespace:
         course_id=seed_basic.courses["algorithm"].id,
         teacher_id=seed_basic.teachers["t1"].id,
         section_number="01",
-        capacity=20,
+        capacity=10,
     )
     completed.slots.append(OfferingSlot(weekday=1, start_period=1, end_period=2))
     failed = Offering(
@@ -62,14 +62,14 @@ def graded_scenario(db, seed_basic) -> SimpleNamespace:
         course_id=seed_basic.courses["database"].id,
         teacher_id=seed_basic.teachers["t2"].id,
         section_number="01",
-        capacity=20,
+        capacity=10,
     )
     failed.slots.append(OfferingSlot(weekday=2, start_period=3, end_period=4))
     current = Offering(
         semester_id=seed_basic.semester.id,
         course_id=seed_basic.courses["network"].id,
         section_number="02",
-        capacity=20,
+        capacity=10,
     )
     current.slots.append(OfferingSlot(weekday=3, start_period=3, end_period=4))
     db.add_all([completed, failed, current])
@@ -115,7 +115,11 @@ def test_students_see_only_their_own_grades(db, seed_basic, graded_scenario):
     second_grades = list_student_grades(db, student_id=second.id)
 
     assert first_grades["student_number"] == "20260001"
-    assert {item["course_code"] for item in first_grades["grades"]} == {"CS201", "CS202", "CS203"}
+    assert {item["course_code"] for item in first_grades["grades"]} == {
+        "CS201",
+        "CS202",
+        "CS203",
+    }
     assert [item["course_code"] for item in second_grades["grades"]] == ["CS201"]
     assert second_grades["grades"][0]["value"] == "B"
 
@@ -133,7 +137,9 @@ def test_passed_flag_follows_grade_value(db, graded_scenario):
         grades = list_student_grades(
             db, student_id=student.id, semester_id=graded_scenario.completed.semester_id
         )
-        algorithm = [item for item in grades["grades"] if item["course_code"] == "CS201"]
+        algorithm = [
+            item for item in grades["grades"] if item["course_code"] == "CS201"
+        ]
         assert len(algorithm) == 1
         assert algorithm[0]["value"] == value.value
         assert algorithm[0]["passed"] is expected[value]
@@ -149,7 +155,10 @@ def test_grades_can_be_filtered_by_semester(db, seed_basic, graded_scenario):
         db, student_id=first.id, semester_id=seed_basic.semester.id
     )
 
-    assert {item["course_code"] for item in completed_only["grades"]} == {"CS201", "CS202"}
+    assert {item["course_code"] for item in completed_only["grades"]} == {
+        "CS201",
+        "CS202",
+    }
     assert [item["course_code"] for item in current_only["grades"]] == ["CS203"]
 
 

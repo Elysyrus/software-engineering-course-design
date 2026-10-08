@@ -39,7 +39,6 @@ from app.models import (
     Student,
 )
 
-
 RETRYABLE_STATUSES = (
     BillingStatus.PENDING,
     BillingStatus.SENDING,
@@ -136,7 +135,9 @@ def billing_job_view(job: BillingJob) -> dict:
     }
 
 
-def list_billing_jobs(db: Session, *, semester_id: int | None = None) -> list[BillingJob]:
+def list_billing_jobs(
+    db: Session, *, semester_id: int | None = None
+) -> list[BillingJob]:
     """账单任务列表，供教务查看发送状态。"""
     stmt = select(BillingJob).order_by(BillingJob.semester_id, BillingJob.student_id)
     if semester_id is not None:
@@ -187,7 +188,7 @@ def billing_summary(db: Session, *, semester_id: int | None = None) -> dict:
                 "enrolled_count": _course_count(job),
                 "amount": float(job.amount),
                 "status": PAGE_BILL_STATUSES.get(job.status, "PENDING"),
-                "sent_at": None,
+                "sent_at": job.sent_at.isoformat() if job.sent_at else None,
                 "attempts": job.attempts,
                 "last_error": job.last_error,
             }
@@ -213,7 +214,9 @@ def billing_summary(db: Session, *, semester_id: int | None = None) -> dict:
                 .group_by(Offering.status)
             ).all()
         }
-        opened = int(status_counts.get(OfferingStatus.OPEN, 0))
+        opened = int(status_counts.get(OfferingStatus.OPEN, 0)) + int(
+            status_counts.get(OfferingStatus.CLOSED, 0)
+        )
         cancelled = int(status_counts.get(OfferingStatus.CANCELLED, 0))
         enrolled = int(
             db.scalar(
@@ -329,6 +332,7 @@ def dispatch_pending_jobs(
                     job.last_error = f"[{ABANDONED_MARK}] {job.last_error}"
         else:
             job.status = BillingStatus.SENT
+            job.sent_at = _utcnow()
             job.last_error = None
             sent += 1
         db.commit()

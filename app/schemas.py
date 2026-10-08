@@ -4,8 +4,13 @@ from pydantic import BaseModel, Field, model_validator
 
 
 class DraftChoiceInput(BaseModel):
+    """
+    一个班次对应的草稿类结构
+    """
+
     offering_id: int
     kind: Literal["primary", "alternate"]
+    # 备选优先级要么为空，不为空就只能是1或2
     alternate_priority: int | None = Field(default=None, ge=1, le=2)
 
     @model_validator(mode="after")
@@ -17,6 +22,7 @@ class DraftChoiceInput(BaseModel):
         return self
 
 
+# 整个请求草稿由下面的模型检查
 class SaveDraftRequest(BaseModel):
     expected_version: int = Field(ge=1)
     choices: list[DraftChoiceInput] = Field(max_length=6)
