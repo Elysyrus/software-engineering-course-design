@@ -1,6 +1,8 @@
 # 课程注册系统
 
-这是软件工程课程设计的 FastAPI 后端。当前版本完成了成员 1（组长）的核心范围：数据库总体结构、学生选课事务、关闭选课、账单任务落库、接口约定和自动化测试。
+这是软件工程课程设计的 FastAPI 课程注册系统。成员 1–4 的代码已集成，包括核心选课、网页、登录与师生管理、教师授课与成绩、计费对接。
+
+**当前仍未完成全部网页联调**：学生选课和教务关闭/账单状态页面仍调用模拟接口；真实后端已存在。不得把这些页面的成功提示作为选课落库或账单发送成功的证据。最新检查与待办见 [成员1–4集成检查报告](docs/成员1-4集成检查报告_2026-10-08.md)。
 
 ## 已完成
 
@@ -9,8 +11,9 @@
 - 校验班次状态、容量、先修课、上课冲突和同课程重复修读。
 - 提交、换班式修改、退课和删除方案均在事务中执行；版本号阻止旧页面覆盖新状态。
 - 关闭选课采用已确认的两轮处理，取消无教师/人数不足班次，按排队顺序尝试备选。
-- 关闭事务内固定最终课表和金额，创建待发送账单；实际发送和重试由成员 4 接入。
-- 开发环境身份适配器已提供；正式会话认证由成员 3 替换。
+- 关闭事务内固定最终课表和金额，创建待发送账单；成员 4 已提供计费接收模拟服务、发送和后台重试。
+- 成员 3 已接入正式 Cookie 会话、首次改密、角色权限和师生账号管理。
+- 成员 4 已接入真实教师授课、名单、成绩与成绩变更记录接口及对应页面。
 
 ## 本地运行	
 
@@ -33,7 +36,16 @@ DATABASE_URL=sqlite:///./course_registration.db
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --reload
 ```
 
-打开 `http://127.0.0.1:8000/docs` 查看接口。登录后浏览器会保存 `HttpOnly` 会话 Cookie；所有写请求会自动提交 CSRF Token。完整约定见 [接口文档](docs/接口约定.md)。
+打开 `http://127.0.0.1:8000/login` 使用网页，或打开 `http://127.0.0.1:8000/docs` 查看真实接口。登录后浏览器会保存 `HttpOnly` 会话 Cookie；网页公共请求函数会提交 CSRF Token，但成员 1 的真实写入口仍需补后端校验。约定见 [接口文档](docs/接口约定v0.2.md) 和 [成员4接口说明](docs/成员4接口说明.md)。
+
+计费功能另需启动模拟服务与重试进程（在另两个终端、项目根目录运行）：
+
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn mock_billing.mock_billing_service:app --host 127.0.0.1 --port 8082
+.\.venv\Scripts\python.exe -m scripts.billing_retry_worker
+```
+
+成员 4 演示数据和详细运行步骤见 [成员4运行验证说明](docs/成员4运行验证说明.md)。目录模拟服务可运行 `python -m uvicorn mock_catalog.mock_catalog_service:app --host 127.0.0.1 --port 8081`，但当前应用尚未接入它。
 
 ## 初始化教务账号
 
@@ -65,6 +77,8 @@ DATABASE_URL=sqlite:///./course_registration.db
 
 测试不仅检查响应，还检查选课人数、原结果、方案版本、关闭状态和账单快照等数据库结果。
 
+2026-10-08 集成回归为 **168 passed, 2 skipped**；两项 MySQL 并发用例未配置测试库而跳过。页面模拟接口的遗留问题不在现有测试的完整覆盖范围内，详见集成检查报告。
+
 若有专用 MySQL 测试库（库名必须以 `_test` 结尾），可执行真实双事务名额竞争测试：
 
 ```powershell
@@ -81,5 +95,13 @@ app/main.py                      FastAPI 接口
 migrations/                     Alembic 数据库迁移
 tests/                           核心业务和接口测试
 docs/成员1核心设计说明.md         设计与并发约定
-docs/接口约定.md                 给成员 2、3、4 的集成契约
+docs/接口约定v0.2.md             给成员 2、3、4 的集成契约
+app/services/auth.py             正式登录与会话
+app/services/personnel.py        师生管理
+app/services/teaching.py         教师授课与成绩
+app/services/billing.py          账单派发与重试
+web/                            页面模板与请求适配
+mock_catalog/                   尚待应用联调的目录模拟服务
+mock_billing/                   计费接收模拟服务
+scripts/billing_retry_worker.py  独立后台重试进程
 ```
