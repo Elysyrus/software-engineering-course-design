@@ -1,0 +1,18 @@
+{
+  "evidence": [
+    "S001: login + first password change passed",
+    "S001: catalog -> save 4+2 -> persisted ordering -> formal submit passed",
+    "S002: login + first password change passed",
+    "S002: catalog -> save 4+2 -> persisted ordering -> formal submit passed",
+    "S003: login + first password change passed",
+    "S003: catalog -> save 4+2 -> persisted ordering -> formal submit passed",
+    "S001: drop released one formal enrollment",
+    "T001: login + first password change passed",
+    "T001: release -> claim -> previous completed term grade update passed",
+    "registrar: login + first password change passed",
+    "registrar: complete personnel create/edit + XSS text handling passed",
+    "registrar: real close -> cancellations -> 3 bills -> worker automatically sent all passed",
+    "closed student results are read only; 390px mobile rendered"
+  ],
+  "pageErrors": []
+}

@@ -18,8 +18,8 @@ from app.models import (
     TeacherQualification,
 )
 from app.services.teaching import list_claimable_offerings
-from scripts.seed_demo_data import seed_demo_data
-from scripts.seed_teaching_demo import GRADE_PATTERN, seed_teaching_demo
+from tests.support.personnel_demo import seed_demo_data
+from tests.support.teaching_demo import GRADE_PATTERN, seed_teaching_demo
 
 
 def _factory(db: Session) -> sessionmaker:

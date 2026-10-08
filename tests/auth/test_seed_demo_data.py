@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.models import Account, AccountRole, Course, Student, Teacher
 from app.services.auth import verify_password
-from scripts.seed_demo_data import seed_demo_data
+from tests.support.personnel_demo import seed_demo_data
 
 
 def test_seed_demo_data_creates_records_once_and_reuses_them(db: Session):
