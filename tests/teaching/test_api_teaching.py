@@ -29,6 +29,68 @@ from app.routers import teaching as teaching_routes
 from app.services.auth import create_account, create_session
 
 
+@pytest.fixture(autouse=True)
+def available_catalog(monkeypatch, seed_basic):
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(
+        teaching_routes.catalog,
+        "fetch_catalog",
+        lambda code: SimpleNamespace(semester_code=code),
+    )
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    ["/api/v1/teacher/claimable-sections", "/api/v1/teacher/offerings/claimable"],
+)
+def test_teacher_catalog_failure_and_recovery(db, seed_basic, monkeypatch, endpoint):
+    from types import SimpleNamespace
+
+    client = _client(db)
+    session = _teacher_session(db, seed_basic)
+    client.cookies.set("session_id", session.id)
+    before = db.scalar(select(func.count()).select_from(Offering))
+
+    def unavailable(_code):
+        raise BusinessError("外部课程目录不可用，请稍后再试", 503)
+
+    monkeypatch.setattr(teaching_routes.catalog, "fetch_catalog", unavailable)
+    response = client.get(endpoint)
+    assert response.status_code == 503
+    assert "目录不可用" in response.json()["detail"]
+    assert client.get("/api/v1/teacher/my-sections").status_code == 200
+    assert db.scalar(select(func.count()).select_from(Offering)) == before
+    monkeypatch.setattr(
+        teaching_routes.catalog,
+        "fetch_catalog",
+        lambda code: SimpleNamespace(semester_code=code),
+    )
+    recovered = client.get(endpoint)
+    assert recovered.status_code == 200
+    assert [row["course_code"] for row in recovered.json()["offerings"]] == ["CS201"]
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    ["/api/v1/teacher/claimable-sections", "/api/v1/teacher/offerings/claimable"],
+)
+def test_teacher_rejects_catalog_for_another_semester(
+    db, seed_basic, monkeypatch, endpoint
+):
+    from types import SimpleNamespace
+
+    client = _client(db)
+    session = _teacher_session(db, seed_basic)
+    client.cookies.set("session_id", session.id)
+    monkeypatch.setattr(
+        teaching_routes.catalog,
+        "fetch_catalog",
+        lambda code: SimpleNamespace(semester_code="OTHER-TERM"),
+    )
+    assert client.get(endpoint).status_code == 503
+
+
 def _client(db) -> TestClient:
     app = FastAPI()
 

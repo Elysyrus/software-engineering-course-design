@@ -23,6 +23,17 @@ from app.routers import teaching as teaching_routes
 from app.services.auth import create_account, create_session
 
 
+@pytest.fixture(autouse=True)
+def available_catalog(monkeypatch):
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(
+        teaching_routes.catalog,
+        "fetch_catalog",
+        lambda code: SimpleNamespace(semester_code=code),
+    )
+
+
 def _client(db) -> TestClient:
     app = FastAPI()
 
@@ -31,7 +42,9 @@ def _client(db) -> TestClient:
 
     @app.exception_handler(BusinessError)
     async def business_error_handler(_request, exc: BusinessError):
-        return JSONResponse(status_code=exc.status_code, content={"detail": exc.message})
+        return JSONResponse(
+            status_code=exc.status_code, content={"detail": exc.message}
+        )
 
     app.dependency_overrides[get_db] = override_get_db
     app.include_router(teaching_routes.router)
@@ -215,7 +228,9 @@ def test_grade_page_endpoint_accepts_letter_grades(db, seed_basic, completed_off
     assert rows[0]["updated_at"] is not None
 
 
-def test_grade_page_endpoint_rejects_legacy_score_payload(db, seed_basic, completed_offering):
+def test_grade_page_endpoint_rejects_legacy_score_payload(
+    db, seed_basic, completed_offering
+):
     """旧版模拟接口用 score(0-100)，直接放行会被当成留空而清掉成绩，必须拒绝。"""
     client = _client(db)
     session = _teacher(db, seed_basic, "t1")

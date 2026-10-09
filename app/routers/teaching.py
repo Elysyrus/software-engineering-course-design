@@ -14,10 +14,10 @@ from sqlalchemy.orm import Session
 
 from app.auth_contract import current_user, require_student, require_teacher
 from app.database import get_db
+from app.errors import BusinessError
 from app.models import Semester, SemesterStatus
 from app.routers.deps import require_csrf_token
-from app.services import teaching
-
+from app.services import catalog, teaching
 
 router = APIRouter(prefix="/api/v1", tags=["成员4-教学"])
 
@@ -47,9 +47,7 @@ class SemesterListResponse(BaseModel):
 
 
 @router.get("/semesters", response_model=SemesterListResponse)
-def list_semesters(
-    _user=Depends(current_user), db: Session = Depends(get_db)
-):
+def list_semesters(_user=Depends(current_user), db: Session = Depends(get_db)):
     """所有已登录角色都可读的学期列表，供页面选择学期。"""
     semesters = db.scalars(
         select(Semester).order_by(Semester.starts_on.desc(), Semester.id.desc())
@@ -101,9 +99,9 @@ def list_claimable_offerings(
         return {"semester_id": None, "offerings": []}
     return {
         "semester_id": target_semester_id,
-        "offerings": teaching.list_claimable_offerings(
+        "offerings": _claimable_from_catalog(
             db, teacher_id=teacher_id, semester_id=target_semester_id
-        )
+        ),
     }
 
 
@@ -260,8 +258,7 @@ def _format_moment(value) -> str | None:
 
 def _semester_codes(db: Session) -> dict[int, str]:
     return {
-        semester.id: semester.code
-        for semester in db.scalars(select(Semester)).all()
+        semester.id: semester.code for semester in db.scalars(select(Semester)).all()
     }
 
 
@@ -275,9 +272,23 @@ def _default_semester_id(db: Session) -> int | None:
     )
     if semester is None:
         semester = db.scalar(
-            select(Semester).order_by(Semester.starts_on.desc(), Semester.id.desc()).limit(1)
+            select(Semester)
+            .order_by(Semester.starts_on.desc(), Semester.id.desc())
+            .limit(1)
         )
     return semester.id if semester is not None else None
+
+
+def _claimable_from_catalog(db: Session, *, teacher_id: int, semester_id: int):
+    """认领列表依赖只读目录；本人授课与历史记录仍可独立查询。"""
+    offerings = teaching.list_claimable_offerings(
+        db, teacher_id=teacher_id, semester_id=semester_id
+    )
+    semester = db.get(Semester, semester_id)
+    snapshot = catalog.fetch_catalog(semester.code)
+    if snapshot.semester_code != semester.code:
+        raise BusinessError("外部目录返回了其他学期，拒绝使用", 503)
+    return offerings
 
 
 @router.get("/teacher/claimable-sections")
@@ -290,27 +301,27 @@ def page_claimable_sections(
     target_semester_id = semester_id or _default_semester_id(db)
     if target_semester_id is None:
         return {"semester_id": None, "offerings": []}
-    offerings = teaching.list_claimable_offerings(
+    offerings = _claimable_from_catalog(
         db, teacher_id=teacher_id, semester_id=target_semester_id
     )
     return {
         "semester_id": target_semester_id,
         "offerings": [
-        {
-            "id": item["offering_id"],
-            "course_code": item["course_code"],
-            "course_name": item["course_name"],
-            "fee": str(item["fee"]),
-            "capacity": item["capacity"],
-            "enrolled_count": item["enrolled_count"],
-            "section_number": item["section_number"],
-            "semester_id": item["semester_id"],
-            "schedule_time": _format_schedule(item["slots"]),
-            "teacher_id": item["teacher_id"],
-            "is_mine": item["is_claimed_by_me"],
-            "status": item["status"],
-        }
-        for item in offerings
+            {
+                "id": item["offering_id"],
+                "course_code": item["course_code"],
+                "course_name": item["course_name"],
+                "fee": str(item["fee"]),
+                "capacity": item["capacity"],
+                "enrolled_count": item["enrolled_count"],
+                "section_number": item["section_number"],
+                "semester_id": item["semester_id"],
+                "schedule_time": _format_schedule(item["slots"]),
+                "teacher_id": item["teacher_id"],
+                "is_mine": item["is_claimed_by_me"],
+                "status": item["status"],
+            }
+            for item in offerings
         ],
     }
 
@@ -329,19 +340,19 @@ def page_my_sections(
     return {
         "offerings": [
             {
-            "id": item["offering_id"],
-            "course_code": item["course_code"],
-            "course_name": item["course_name"],
-            "section_number": item["section_number"],
-            "semester_id": item["semester_id"],
-            "semester_code": codes.get(item["semester_id"]),
-            "capacity": item["capacity"],
-            "enrolled_count": item["enrolled_count"],
-            "schedule_time": _format_schedule(item["slots"]),
-            "status": item["status"],
-            "teacher_id": item["teacher_id"],
-            "is_mine": item["is_claimed_by_me"],
-        }
+                "id": item["offering_id"],
+                "course_code": item["course_code"],
+                "course_name": item["course_name"],
+                "section_number": item["section_number"],
+                "semester_id": item["semester_id"],
+                "semester_code": codes.get(item["semester_id"]),
+                "capacity": item["capacity"],
+                "enrolled_count": item["enrolled_count"],
+                "schedule_time": _format_schedule(item["slots"]),
+                "status": item["status"],
+                "teacher_id": item["teacher_id"],
+                "is_mine": item["is_claimed_by_me"],
+            }
             for item in offerings
         ]
     }

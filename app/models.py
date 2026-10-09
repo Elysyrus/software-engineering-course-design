@@ -17,9 +17,16 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
+from sqlalchemy.dialects import mysql
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+
+# MySQL 的 DATETIME 默认不保存小数秒且四舍五入，可能把刚写入的时间进位到未来，
+# 导致“立即派发”取不到刚创建的账单任务；统一保留到微秒。
+Timestamp = DateTime(timezone=True).with_variant(
+    mysql.DATETIME(timezone=True, fsp=6), "mysql"
+)
 
 
 class SemesterStatus(str, enum.Enum):
@@ -114,10 +121,10 @@ class Account(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+        Timestamp, default=lambda: datetime.now(UTC)
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        Timestamp,
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
     )
@@ -129,9 +136,9 @@ class ServerSession(Base):
     id: Mapped[str] = mapped_column(String(128), primary_key=True)
     account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
     csrf_token: Mapped[str] = mapped_column(String(128))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(Timestamp)
+    expires_at: Mapped[datetime] = mapped_column(Timestamp)
+    revoked_at: Mapped[datetime | None] = mapped_column(Timestamp)
 
 
 ################################################################################
@@ -148,7 +155,7 @@ class Semester(Base):
         Enum(SemesterStatus), default=SemesterStatus.OPEN
     )
     closed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+        Timestamp, nullable=True
     )
 
 
@@ -241,7 +248,7 @@ class Schedule(Base):
     has_submitted: Mapped[bool] = mapped_column(Boolean, default=False)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
     last_submitted_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+        Timestamp, nullable=True
     )
 
 
@@ -289,7 +296,7 @@ class Enrollment(Base):
         ForeignKey("courses.id", ondelete="RESTRICT")
     )
     enrolled_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+        Timestamp, default=lambda: datetime.now(UTC)
     )
 
 
@@ -310,7 +317,7 @@ class FormalAlternate(Base):
     )
     priority: Mapped[int] = mapped_column(Integer)
     consumed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+        Timestamp, nullable=True
     )  # 这个备选是否已经被系统使用
 
 
@@ -350,7 +357,7 @@ class GradeChange(Base):
         ForeignKey("teachers.id", ondelete="RESTRICT"), index=True
     )
     changed_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+        Timestamp, default=lambda: datetime.now(UTC)
     )
 
 
@@ -387,14 +394,14 @@ class BillingJob(Base):
     )
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     next_attempt_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+        Timestamp, default=lambda: datetime.now(UTC)
     )
     sent_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+        Timestamp, nullable=True
     )
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+        Timestamp, default=lambda: datetime.now(UTC)
     )
 
 
