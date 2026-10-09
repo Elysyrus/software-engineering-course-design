@@ -1,0 +1,17 @@
+........................................................................ [ 37%]
+........................................................................ [ 75%]
+................................................                         [100%]
+============================== warnings summary ===============================
+.venv\Lib\site-packages\starlette\testclient.py:51
+  C:\Users\a1240\Desktop\软件工程课程设计\.venv\Lib\site-packages\starlette\testclient.py:51: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+tests/auth/test_auth_integration.py: 26 warnings
+tests/teaching/test_api_teaching.py: 29 warnings
+tests/teaching/test_grade_changes.py: 16 warnings
+tests/teaching/test_page_api.py: 15 warnings
+  C:\Users\a1240\Desktop\软件工程课程设计\.venv\Lib\site-packages\starlette\testclient.py:451: DeprecationWarning: Setting per-request cookies=<...> is being deprecated, because the expected behaviour on cookie persistence is ambiguous. Set cookies directly on the client instance instead.
+    return super().request(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+192 passed, 87 warnings in 27.18s

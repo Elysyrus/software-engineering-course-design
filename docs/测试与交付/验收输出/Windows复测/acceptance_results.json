@@ -1,0 +1,490 @@
+{
+  "executed_at": "2026-10-09T17:52:23",
+  "database": "MySQL（course_pr_acceptance_test，每次清空重建）",
+  "expected_total": 68,
+  "total": 68,
+  "passed": 68,
+  "failed": 0,
+  "completed": true,
+  "missing_case_ids": [],
+  "unexpected_case_ids": [],
+  "error": null,
+  "cases": [
+    {
+      "id": "TC-AUTH-01",
+      "title": "未登录访问业务接口",
+      "expected": "401",
+      "actual": "HTTP 401 {\"detail\": \"未登录\"}",
+      "result": "通过"
+    },
+    {
+      "id": "TC-AUTH-02",
+      "title": "错误密码登录",
+      "expected": "401，不设置会话",
+      "actual": "HTTP 401 {\"detail\": \"账号或密码错误\"}",
+      "result": "通过"
+    },
+    {
+      "id": "TC-AUTH-03",
+      "title": "首次登录未改密访问业务",
+      "expected": "登录返回 is_first_login=true；业务接口 403",
+      "actual": "登录 HTTP 200 {\"role\": \"student\", \"is_first_login\": true}；业务 HTTP 403 {\"detail\": \"首次登录必须先修改密码\"}",
+      "result": "通过"
+    },
+    {
+      "id": "TC-AUTH-04",
+      "title": "新密码不含数字",
+      "expected": "422，提示密码规则",
+      "actual": "HTTP 422 {\"detail\": \"密码至少需要包含一个数字\"}",
+      "result": "通过"
+    },
+    {
+      "id": "TC-AUTH-05",
+      "title": "改密请求缺少 CSRF 令牌",
+      "expected": "403",
+      "actual": "HTTP 403 {\"detail\": \"缺少 CSRF 令牌\"}",
+      "result": "通过"
+    },
+    {
+      "id": "TC-AUTH-06",
+      "title": "改密成功后旧会话失效、新密码可登录",
+      "expected": "改密 200；旧会话 401；新密码登录 200 且 is_first_login=false",
+      "actual": "改密 HTTP 200 {\"message\": \"密码修改成功，请重新登录\"}；旧会话 401；新登录 HTTP 200 {\"role\": \"student\", \"is_first_login\": false}",
+      "result": "通过"
+    },
+    {
+      "id": "TC-ADM-01",
+      "title": "教务新增 4 名学生",
+      "expected": "201，自动分配互不相同的学号",
+      "actual": "分配学号 ['20260001', '20260002', '20260003', '20260004']",
+      "result": "通过"
+    },
+    {
+      "id": "TC-ADM-02",
+      "title": "新增教师未填院系",
+      "expected": "422",
+      "actual": "HTTP 422 {\"detail\": \"教师必须填写院系\"}",
+      "result": "通过"
+    },
+    {
+      "id": "TC-ADM-03",
+      "title": "新增并修改教师资料",
+      "expected": "创建 201；修改后查询显示新姓名、院系、状态",
+      "actual": "创建 201 工号 T20260001；查询 验收教师乙/软件学院/on_leave",
+      "result": "通过"
+    },
+    {
+      "id": "TC-ADM-04",
+      "title": "删除无业务记录的教师",
+      "expected": "action=deleted；再次查询 404",
+      "actual": "删除 HTTP 200 {\"action\": \"deleted\", \"message\": \"人员已删除\"}；查询 404",
+      "result": "通过"
+    },
+    {
+      "id": "TC-ADM-05",
+      "title": "查询不存在的人员",
+      "expected": "404",
+      "actual": "HTTP 404 {\"detail\": \"师生账号不存在\"}",
+      "result": "通过"
+    },
+    {
+      "id": "TC-ADM-06",
+      "title": "姓名含 HTML 标签",
+      "expected": "按原文保存（页面以文本显示需浏览器另行检查）",
+      "actual": "保存值 '<b>验收HTML</b>'",
+      "result": "通过"
+    },
+    {
+      "id": "TC-SEC-01",
+      "title": "学生调用教务人员接口",
+      "expected": "403",
+      "actual": "HTTP 403 {\"detail\": \"仅教务员可访问\"}",
+      "result": "通过"
+    },
+    {
+      "id": "TC-CAT-01",
+      "title": "学生读取外部目录班次",
+      "expected": "返回 2027-SPRING 的 11 个班次，均显示描述、院系、名额",
+      "actual": "学期 2027-SPRING，班次 11 个",
+      "result": "通过"
+    },
+    {
+      "id": "TC-TCH-01",
+      "title": "T001 认领有资格的 ACC101",
+      "expected": "200，teacher_id 为 T001",
+      "actual": "HTTP 200 {\"message\": \"认领成功\", \"offering_id\": 10, \"teacher_id\": 1}",
+      "result": "通过"
+    },
+    {
+      "id": "TC-TCH-02",
+      "title": "T001 认领与 ACC101 同时段的 ACC108",
+      "expected": "409，提示与已承担班次时间冲突",
+      "actual": "HTTP 409 {\"detail\": \"与已承担班次 10 上课时间冲突\"}",
+      "result": "通过"
+    },
+    {
+      "id": "TC-TCH-03",
+      "title": "T002 抢占已被认领的 ACC101",
+      "expected": "409，提示已被其他教师认领",
+      "actual": "HTTP 409 {\"detail\": \"该班次已被其他教师认领\"}",
+      "result": "通过"
+    },
+    {
+      "id": "TC-TCH-04",
+      "title": "无资格教师 T009 认领 ACC102",
+      "expected": "403，提示不具备授课资格",
+      "actual": "HTTP 403 {\"detail\": \"不具备该课程的授课资格\"}",
+      "result": "通过"
+    },
+    {
+      "id": "TC-TCH-05",
+      "title": "T008 取消认领 ACC110 后重新认领",
+      "expected": "取消 200 且 teacher_id 为空；重新认领 200",
+      "actual": "取消 HTTP 200 {\"message\": \"已取消授课\", \"offering_id\": 20, \"teacher_id\": null}；重新认领 200",
+      "result": "通过"
+    },
+    {
+      "id": "TC-TCH-06",
+      "title": "T007 取消他人承担的 ACC110",
+      "expected": "403",
+      "actual": "HTTP 403 {\"detail\": \"只能取消自己承担的班次\"}",
+      "result": "通过"
+    },
+    {
+      "id": "TC-SEC-02",
+      "title": "教师调用学生方案接口",
+      "expected": "403",
+      "actual": "HTTP 403 {\"detail\": \"仅学生可访问\"}",
+      "result": "通过"
+    },
+    {
+      "id": "TC-REG-01",
+      "title": "首次提交只有 3 个主选",
+      "expected": "422，提示首次必须 4 主选 + 2 备选",
+      "actual": "HTTP 422 {\"detail\": \"首次提交必须恰好包含 4 个主选和 2 个备选\"}",
+      "result": "通过"
+    },
+    {
+      "id": "TC-REG-02",
+      "title": "S013 仅保存草稿",
+      "expected": "200；草稿保留 6 项；任何班次人数不变",
+      "actual": "保存 200；草稿 6 项；人数变化 False",
+      "result": "通过"
+    },
+    {
+      "id": "TC-REG-03",
+      "title": "S004 未修先修课 FINAL001 选择 ACC107",
+      "expected": "409，提示先修课程未满足；无正式结果",
+      "actual": "HTTP 409 {\"detail\": \"先修课程未满足（课程 15: 缺少 [1]）\"}；正式结果 []",
+      "result": "通过"
+    },
+    {
+      "id": "TC-REG-04",
+      "title": "S001–S003 已修 FINAL001，首次提交含 ACC107 的 4+2 方案",
+      "expected": "200；正式结果为 4 门主选",
+      "actual": "S001 正式结果 ['ACC101', 'ACC102', 'ACC104', 'ACC107']",
+      "result": "通过"
+    },
+    {
+      "id": "TC-REG-05",
+      "title": "ACC101 剩 1 个名额时 S010、S011 同时提交",
+      "expected": "仅一人成功，另一人提示已满；ACC101 人数为 10",
+      "actual": "S010 HTTP 409 {\"detail\": \"班次 10 已满\"}；S011 HTTP 200 {\"schedule_id\": 15, \"version\": 3, \"message\": \"选课方案已提交\"}；ACC101 人数 10",
+      "result": "通过"
+    },
+    {
+      "id": "TC-REG-06",
+      "title": "S010 改选未满班次后重新提交",
+      "expected": "200；正式结果为 ACC103/ACC104/ACC105/ACC106",
+      "actual": "HTTP 200 {\"schedule_id\": 14, \"version\": 4, \"message\": \"选课方案已提交\"}；正式结果 ['ACC103', 'ACC104', 'ACC105', 'ACC106']",
+      "result": "通过"
+    },
+    {
+      "id": "TC-REG-07",
+      "title": "S010 后续修改加入已满的 ACC101",
+      "expected": "409 已满；原正式结果不变",
+      "actual": "HTTP 409 {\"detail\": \"班次 10 已满\"}；正式结果 ['ACC103', 'ACC104', 'ACC105', 'ACC106']",
+      "result": "通过"
+    },
+    {
+      "id": "TC-REG-08",
+      "title": "S012 同时选择同一时段的 ACC101 与 ACC108",
+      "expected": "409，提示两个班次上课时间冲突；整份提交不生效",
+      "actual": "HTTP 409 {\"detail\": \"班次 10 与班次 18 上课时间冲突\"}；正式结果 []",
+      "result": "通过"
+    },
+    {
+      "id": "TC-REG-09",
+      "title": "S012 首次提交含已满的 ACC101",
+      "expected": "409，提示班次已满；无正式结果",
+      "actual": "HTTP 409 {\"detail\": \"班次 10 已满\"}",
+      "result": "通过"
+    },
+    {
+      "id": "TC-REG-10",
+      "title": "S013 主选同一课程的两个班次",
+      "expected": "409，提示同一课程只能选择一个班次",
+      "actual": "HTTP 409 {\"detail\": \"同一课程只能正式选择一个班次\"}",
+      "result": "通过"
+    },
+    {
+      "id": "TC-REG-11",
+      "title": "S014 提交后删除整份方案",
+      "expected": "200；正式结果清空；ACC103 人数减 1",
+      "actual": "HTTP 200 {\"schedule_id\": 17, \"version\": 4, \"message\": \"选课方案已删除\"}；ACC103 10->9；正式结果 []",
+      "result": "通过"
+    },
+    {
+      "id": "TC-REG-12",
+      "title": "S002 将 ACC104 由 01 班换到 02 班",
+      "expected": "200；正式结果含 ACC104-02 且不含 ACC104",
+      "actual": "HTTP 200 {\"schedule_id\": 7, \"version\": 5, \"message\": \"选课方案已提交\"}；正式结果 ['ACC101', 'ACC102', 'ACC104-02', 'ACC107']",
+      "result": "通过"
+    },
+    {
+      "id": "TC-REG-13",
+      "title": "S003 单独退选 ACC102",
+      "expected": "200；正式结果 3 门，备选未被自动补入",
+      "actual": "HTTP 200 {\"schedule_id\": 8, \"version\": 4, \"message\": \"退课成功\"}；正式结果 ['ACC101', 'ACC104', 'ACC107']；剩余备选 2",
+      "result": "通过"
+    },
+    {
+      "id": "TC-REG-14",
+      "title": "S005 使用旧页面版本提交",
+      "expected": "409，提示重新载入；版本不变",
+      "actual": "HTTP 409 {\"detail\": \"方案已在其他页面更新，请重新载入\"}；版本 3",
+      "result": "通过"
+    },
+    {
+      "id": "TC-SEC-03",
+      "title": "S005 保存草稿缺少 CSRF 令牌",
+      "expected": "403；方案不变",
+      "actual": "HTTP 403 {\"detail\": \"缺少 CSRF 令牌\"}",
+      "result": "通过"
+    },
+    {
+      "id": "TC-TCH-07",
+      "title": "T001 查看 ACC101 花名册",
+      "expected": "10 名正式选上的学生，不含只存草稿的 S013",
+      "actual": "人数 10：['20260001', 'S001', 'S002', 'S003', 'S004', 'S005', 'S006', 'S007', 'S008', 'S009']",
+      "result": "通过"
+    },
+    {
+      "id": "TC-SEC-04",
+      "title": "T002 查看他人班次花名册",
+      "expected": "403",
+      "actual": "HTTP 403 {\"detail\": \"只能访问自己承担班次的数据\"}",
+      "result": "通过"
+    },
+    {
+      "id": "TC-SEC-05",
+      "title": "学生调用教师花名册接口",
+      "expected": "403",
+      "actual": "HTTP 403 {\"detail\": \"仅教师可访问\"}",
+      "result": "通过"
+    },
+    {
+      "id": "TC-CAT-02",
+      "title": "目录服务停止时学生查看课程列表",
+      "expected": "503 并提示目录不可用；已保存方案仍可读取",
+      "actual": "目录 HTTP 503 {\"detail\": \"课程目录暂时不可用或数据无效，请稍后重试；已保存的选课结果不会丢失\"}；方案 200",
+      "result": "通过"
+    },
+    {
+      "id": "TC-CAT-03",
+      "title": "目录服务恢复后重新查询",
+      "expected": "200",
+      "actual": "HTTP 200",
+      "result": "通过"
+    },
+    {
+      "id": "TC-CAT-04",
+      "title": "教师认领目录故障与恢复",
+      "expected": "故障时 503；本人授课可读；恢复后 200",
+      "actual": "认领 503；本人授课 200；恢复 200",
+      "result": "通过"
+    },
+    {
+      "id": "TC-ADM-07",
+      "title": "停用 S013 后旧会话访问、再启用",
+      "expected": "停用后旧会话 401、不能登录；启用后可登录",
+      "actual": "旧会话 401；停用期间登录 403；启用后登录 200",
+      "result": "通过"
+    },
+    {
+      "id": "TC-SEC-06",
+      "title": "学生调用关闭选课",
+      "expected": "403",
+      "actual": "HTTP 403 {\"detail\": \"仅教务员可访问\"}",
+      "result": "通过"
+    },
+    {
+      "id": "TC-CLS-01",
+      "title": "关闭确认口令错误",
+      "expected": "422；学期仍开放",
+      "actual": "HTTP 422 {\"detail\": \"确认口令不正确\"}",
+      "result": "通过"
+    },
+    {
+      "id": "TC-CLS-02",
+      "title": "计费系统停止时教务关闭选课",
+      "expected": "200；取消 ['ACC104-02', 'ACC105', 'ACC106', 'ACC108', 'ACC110']；创建 12 个账单任务",
+      "actual": "200；取消 ['ACC104-02', 'ACC105', 'ACC106', 'ACC108', 'ACC110']；账单任务 12",
+      "result": "通过"
+    },
+    {
+      "id": "TC-CLS-03",
+      "title": "核对关闭后每位学生课表与金额快照",
+      "expected": "12 名学生课表与金额与预期一致（含两轮备选替补）；只存草稿的 S013、已删除方案的 S014 无账单",
+      "actual": "不一致 无；不应有账单却有 无；总额 4920.0",
+      "result": "通过"
+    },
+    {
+      "id": "TC-CLS-04",
+      "title": "S002 换入的 ACC104-02 人数不足被取消后由备选替补",
+      "expected": "S002 获得第一备选 ACC109",
+      "actual": "S002 正式结果 ['ACC101', 'ACC102', 'ACC107', 'ACC109']",
+      "result": "通过"
+    },
+    {
+      "id": "TC-CLS-05",
+      "title": "主动退课的 S003 关闭时不自动补回",
+      "expected": "S003 仍为 3 门",
+      "actual": "S003 正式结果 ['ACC101', 'ACC104', 'ACC107']",
+      "result": "通过"
+    },
+    {
+      "id": "TC-CLS-06",
+      "title": "关闭后学生修改方案",
+      "expected": "409，提示选课已关闭",
+      "actual": "HTTP 409 {\"detail\": \"本学期选课已经关闭\"}",
+      "result": "通过"
+    },
+    {
+      "id": "TC-CLS-07",
+      "title": "关闭后教师认领班次",
+      "expected": "409，提示学期不再开放",
+      "actual": "HTTP 409 {\"detail\": \"本学期选课已经关闭\"}",
+      "result": "通过"
+    },
+    {
+      "id": "TC-CLS-08",
+      "title": "重复关闭同一学期",
+      "expected": "200；不重复创建账单任务（仍为 12）",
+      "actual": "HTTP 200 {\"message\": \"选课已关闭，账单任务已保存\", \"cancelled_offering_ids\": [14, 15, 16, 18, 20], \"billing_jobs_created\": 12}",
+      "result": "通过"
+    },
+    {
+      "id": "TC-BIL-01",
+      "title": "计费系统不可用时发送账单",
+      "expected": "12 条均失败并等待重试；状态 PARTIAL_FAIL",
+      "actual": "派发 HTTP 200 {\"dispatched\": 12, \"sent\": 0, \"failed\": 12, \"abandoned\": 0, \"retrying\": 12, \"results\": [{\"job_id\": 1, \"student_id\": 4, \"status\": \"failed\", \"attempts\": 1, \"retryable\": true, \"error\": \"计费服务不可用：[WinError 10061] 由于目标计算机积极拒绝，无法连接。\"}, {\"job_id\": 2, \"student_id\": 1, \"status\": \"failed\", \"attempts\": 1, \"retr；状态 PARTIAL_FAIL 失败 12",
+      "result": "通过"
+    },
+    {
+      "id": "TC-BIL-02",
+      "title": "计费系统恢复后重试",
+      "expected": "12 条全部发送；ALL_SENT；计费端 12 笔且金额与快照一致",
+      "actual": "派发 HTTP 200 {\"dispatched\": 12, \"sent\": 12, \"failed\": 0, \"abandoned\": 0, \"retrying\": 0, \"results\": [{\"job_id\": 1, \"student_id\": 4, \"status\": \"sent\", \"attempts\": 2, \"retryable\": true, \"error\": null}, {\"job_id\": 2, \"student_id\": 1, \"status\": \"sent\", \"attempts\": 2, \"retryable\": true, \"error\": null}, {\"job_id\": 3, \"；状态 ALL_SENT；计费端 12 笔 合计 4920.0",
+      "result": "通过"
+    },
+    {
+      "id": "TC-BIL-03",
+      "title": "对已发送账单重新排队",
+      "expected": "409，提示已发送成功",
+      "actual": "HTTP 409 {\"detail\": \"账单已发送成功，不能重新排队\"}",
+      "result": "通过"
+    },
+    {
+      "id": "TC-BIL-04",
+      "title": "向计费端重复发送同一账单及内容不同的账单",
+      "expected": "相同内容 200 duplicate=true；不同金额 409；账单仍为 12 笔",
+      "actual": "重复 HTTP 200 {\"status\": \"already_charged\", \"duplicate\": true, \"charge\": {\"semester_i；冲突 409；笔数 12",
+      "result": "通过"
+    },
+    {
+      "id": "TC-BIL-05",
+      "title": "计费端重启后再次接收同一账单",
+      "expected": "账本保留 12 笔；重复发送仍识别为重复",
+      "actual": "重启后 12 笔；重复发送 duplicate=True",
+      "result": "通过"
+    },
+    {
+      "id": "TC-GRD-01",
+      "title": "T001 查看可录成绩的上一已完成学期班次",
+      "expected": "2025-FALL 的 FINAL001 班次",
+      "actual": "学期 2025-FALL，班次 ['FINAL001']",
+      "result": "通过"
+    },
+    {
+      "id": "TC-GRD-02",
+      "title": "T001 修改 S001 为 A、清空 S002、S003 记为 I",
+      "expected": "200，updated=3；新增 3 条变更记录",
+      "actual": "HTTP 200 {\"offering_id\": 9, \"updated\": 3, \"unchanged\": 0, \"changes\": [{\"student_id\": 1, \"student_number\": \"S001\", \"previ；变更记录 3 条",
+      "result": "通过"
+    },
+    {
+      "id": "TC-GRD-03",
+      "title": "S001 查看本人成绩单",
+      "expected": "2025-FALL FINAL001 成绩为 A，只含本人记录",
+      "actual": "返回 {\"student_id\": 1, \"student_number\": \"S001\", \"semester_id\": null, \"grades\": [{\"semester_id\": 2, \"semester_code\": \"2025-FALL\", \"course_id\": 1, \"course_code\": \"FIN",
+      "result": "通过"
+    },
+    {
+      "id": "TC-GRD-04",
+      "title": "T002 修改他人班次成绩",
+      "expected": "403",
+      "actual": "HTTP 403 {\"detail\": \"只能录入自己承担班次的学生成绩\"}",
+      "result": "通过"
+    },
+    {
+      "id": "TC-GRD-05",
+      "title": "T001 给不在该班名单的 S004 录成绩",
+      "expected": "403",
+      "actual": "HTTP 403 {\"detail\": \"只能为本班次正式选上的学生录入成绩\"}",
+      "result": "通过"
+    },
+    {
+      "id": "TC-GRD-06",
+      "title": "给已关闭但未结束的 2027-SPRING 班次录成绩",
+      "expected": "409，提示只能录入已完成学期",
+      "actual": "HTTP 409 {\"detail\": \"只能录入已完成学期的成绩\"}",
+      "result": "通过"
+    },
+    {
+      "id": "TC-GRD-07",
+      "title": "录入非法成绩 E",
+      "expected": "422",
+      "actual": "HTTP 422 {\"detail\": \"成绩 E 不是允许的取值\"}",
+      "result": "通过"
+    },
+    {
+      "id": "TC-SEC-07",
+      "title": "学生调用成绩录入接口",
+      "expected": "403",
+      "actual": "HTTP 403 {\"detail\": \"仅教师可访问\"}",
+      "result": "通过"
+    },
+    {
+      "id": "TC-ADM-08",
+      "title": "删除有选课历史的 S014",
+      "expected": "action=deactivated（保留历史，转为停用）",
+      "actual": "HTTP 200 {\"action\": \"deactivated\", \"message\": \"人员已停用\"}",
+      "result": "通过"
+    },
+    {
+      "id": "TC-ADM-09",
+      "title": "重置 S012 密码",
+      "expected": "200；可用初始密码登录且必须改密",
+      "actual": "重置 200；登录 HTTP 200 {\"role\": \"student\", \"is_first_login\": true}",
+      "result": "通过"
+    },
+    {
+      "id": "TC-AUTH-07",
+      "title": "退出登录后访问",
+      "expected": "退出 200；之后 401",
+      "actual": "退出 200；访问 401",
+      "result": "通过"
+    }
+  ]
+}
