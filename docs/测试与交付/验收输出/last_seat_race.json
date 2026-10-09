@@ -1,0 +1,278 @@
+{
+  "executed_at": "2026-10-09T14:51:43",
+  "database": "MySQL（course_acceptance_test，每次清空重建）",
+  "rounds": 30,
+  "overbooked_rounds": 0,
+  "details": [
+    {
+      "round": 1,
+      "status_codes": [
+        200,
+        409
+      ],
+      "acc101_count": 10,
+      "overbooked": false
+    },
+    {
+      "round": 2,
+      "status_codes": [
+        200,
+        409
+      ],
+      "acc101_count": 10,
+      "overbooked": false
+    },
+    {
+      "round": 3,
+      "status_codes": [
+        200,
+        409
+      ],
+      "acc101_count": 10,
+      "overbooked": false
+    },
+    {
+      "round": 4,
+      "status_codes": [
+        200,
+        409
+      ],
+      "acc101_count": 10,
+      "overbooked": false
+    },
+    {
+      "round": 5,
+      "status_codes": [
+        200,
+        409
+      ],
+      "acc101_count": 10,
+      "overbooked": false
+    },
+    {
+      "round": 6,
+      "status_codes": [
+        200,
+        409
+      ],
+      "acc101_count": 10,
+      "overbooked": false
+    },
+    {
+      "round": 7,
+      "status_codes": [
+        200,
+        409
+      ],
+      "acc101_count": 10,
+      "overbooked": false
+    },
+    {
+      "round": 8,
+      "status_codes": [
+        200,
+        409
+      ],
+      "acc101_count": 10,
+      "overbooked": false
+    },
+    {
+      "round": 9,
+      "status_codes": [
+        200,
+        409
+      ],
+      "acc101_count": 10,
+      "overbooked": false
+    },
+    {
+      "round": 10,
+      "status_codes": [
+        200,
+        409
+      ],
+      "acc101_count": 10,
+      "overbooked": false
+    },
+    {
+      "round": 11,
+      "status_codes": [
+        200,
+        409
+      ],
+      "acc101_count": 10,
+      "overbooked": false
+    },
+    {
+      "round": 12,
+      "status_codes": [
+        200,
+        409
+      ],
+      "acc101_count": 10,
+      "overbooked": false
+    },
+    {
+      "round": 13,
+      "status_codes": [
+        200,
+        409
+      ],
+      "acc101_count": 10,
+      "overbooked": false
+    },
+    {
+      "round": 14,
+      "status_codes": [
+        200,
+        409
+      ],
+      "acc101_count": 10,
+      "overbooked": false
+    },
+    {
+      "round": 15,
+      "status_codes": [
+        200,
+        409
+      ],
+      "acc101_count": 10,
+      "overbooked": false
+    },
+    {
+      "round": 16,
+      "status_codes": [
+        200,
+        409
+      ],
+      "acc101_count": 10,
+      "overbooked": false
+    },
+    {
+      "round": 17,
+      "status_codes": [
+        200,
+        409
+      ],
+      "acc101_count": 10,
+      "overbooked": false
+    },
+    {
+      "round": 18,
+      "status_codes": [
+        200,
+        409
+      ],
+      "acc101_count": 10,
+      "overbooked": false
+    },
+    {
+      "round": 19,
+      "status_codes": [
+        200,
+        409
+      ],
+      "acc101_count": 10,
+      "overbooked": false
+    },
+    {
+      "round": 20,
+      "status_codes": [
+        200,
+        409
+      ],
+      "acc101_count": 10,
+      "overbooked": false
+    },
+    {
+      "round": 21,
+      "status_codes": [
+        200,
+        409
+      ],
+      "acc101_count": 10,
+      "overbooked": false
+    },
+    {
+      "round": 22,
+      "status_codes": [
+        200,
+        409
+      ],
+      "acc101_count": 10,
+      "overbooked": false
+    },
+    {
+      "round": 23,
+      "status_codes": [
+        200,
+        409
+      ],
+      "acc101_count": 10,
+      "overbooked": false
+    },
+    {
+      "round": 24,
+      "status_codes": [
+        200,
+        409
+      ],
+      "acc101_count": 10,
+      "overbooked": false
+    },
+    {
+      "round": 25,
+      "status_codes": [
+        200,
+        409
+      ],
+      "acc101_count": 10,
+      "overbooked": false
+    },
+    {
+      "round": 26,
+      "status_codes": [
+        200,
+        409
+      ],
+      "acc101_count": 10,
+      "overbooked": false
+    },
+    {
+      "round": 27,
+      "status_codes": [
+        200,
+        409
+      ],
+      "acc101_count": 10,
+      "overbooked": false
+    },
+    {
+      "round": 28,
+      "status_codes": [
+        200,
+        409
+      ],
+      "acc101_count": 10,
+      "overbooked": false
+    },
+    {
+      "round": 29,
+      "status_codes": [
+        200,
+        409
+      ],
+      "acc101_count": 10,
+      "overbooked": false
+    },
+    {
+      "round": 30,
+      "status_codes": [
+        200,
+        409
+      ],
+      "acc101_count": 10,
+      "overbooked": false
+    }
+  ]
+}

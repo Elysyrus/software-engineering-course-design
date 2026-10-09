@@ -1,0 +1,90 @@
+[14:47:31] 临时目录：/tmp/m6-acceptance-vfoit3u7
+[14:47:32] 已清空重建 MySQL 验收库 course_acceptance_test
+[14:47:33] 执行 -m alembic upgrade head -> 退出码 0
+[14:47:34] 执行 -m scripts.seed_final_demo -> 退出码 0
+[14:47:34] 服务 catalog 已启动（端口 8951）
+[14:47:35] 执行 -m scripts.sync_catalog -> 退出码 0
+[14:47:35] 执行 /home/ruoruodexxs/software-engineering-course-design/docs/测试与交付/验收工具/setup_acceptance_data.py -> 退出码 0
+[14:47:35] 服务 billing 已启动（端口 8952）
+[14:47:36] 服务 app 已启动（端口 8950）
+[14:47:36] TC-AUTH-01 通过 | 未登录访问业务接口 | 实际：HTTP 401 {"detail": "未登录"}
+[14:47:36] TC-AUTH-02 通过 | 错误密码登录 | 实际：HTTP 401 {"detail": "账号或密码错误"}
+[14:47:36] TC-AUTH-03 通过 | 首次登录未改密访问业务 | 实际：登录 HTTP 200 {"role": "student", "is_first_login": true}；业务 HTTP 403 {"detail": "首次登录必须先修改密码"}
+[14:47:36] TC-AUTH-04 通过 | 新密码不含数字 | 实际：HTTP 422 {"detail": "密码至少需要包含一个数字"}
+[14:47:36] TC-AUTH-05 通过 | 改密请求缺少 CSRF 令牌 | 实际：HTTP 403 {"detail": "缺少 CSRF 令牌"}
+[14:47:36] TC-AUTH-06 通过 | 改密成功后旧会话失效、新密码可登录 | 实际：改密 HTTP 200 {"message": "密码修改成功，请重新登录"}；旧会话 401；新登录 HTTP 200 {"role": "student", "is_first_login": false}
+[14:47:40] 教务、S001–S010、T001–T010 已完成首次改密
+[14:47:40] TC-ADM-01 通过 | 教务新增 4 名学生 | 实际：分配学号 ['20260001', '20260002', '20260003', '20260004']
+[14:47:41] TC-ADM-02 通过 | 新增教师未填院系 | 实际：HTTP 422 {"detail": "教师必须填写院系"}
+[14:47:41] TC-ADM-03 通过 | 新增并修改教师资料 | 实际：创建 201 工号 T20260001；查询 验收教师乙/软件学院/on_leave
+[14:47:41] TC-ADM-04 通过 | 删除无业务记录的教师 | 实际：删除 HTTP 200 {"action": "deleted", "message": "人员已删除"}；查询 404
+[14:47:41] TC-ADM-05 通过 | 查询不存在的人员 | 实际：HTTP 404 {"detail": "师生账号不存在"}
+[14:47:41] TC-ADM-06 通过 | 姓名含 HTML 标签 | 实际：保存值 '<b>验收HTML</b>'
+[14:47:41] TC-SEC-01 通过 | 学生调用教务人员接口 | 实际：HTTP 403 {"detail": "仅教务员可访问"}
+[14:47:41] 验收学期 2027-SPRING（id=3）班次：{'ACC101': 10, 'ACC102': 11, 'ACC103': 12, 'ACC104': 13, 'ACC104-02': 14, 'ACC105': 15, 'ACC106': 16, 'ACC107': 17, 'ACC108': 18, 'ACC109': 19, 'ACC110': 20}
+[14:47:41] TC-CAT-01 通过 | 学生读取外部目录班次 | 实际：学期 2027-SPRING，班次 11 个
+[14:47:41] TC-TCH-01 通过 | T001 认领有资格的 ACC101 | 实际：HTTP 200 {"message": "认领成功", "offering_id": 10, "teacher_id": 1}
+[14:47:41] TC-TCH-02 通过 | T001 认领与 ACC101 同时段的 ACC108 | 实际：HTTP 409 {"detail": "与已承担班次 10 上课时间冲突"}
+[14:47:41] TC-TCH-03 通过 | T002 抢占已被认领的 ACC101 | 实际：HTTP 409 {"detail": "该班次已被其他教师认领"}
+[14:47:41] TC-TCH-04 通过 | 无资格教师 T009 认领 ACC102 | 实际：HTTP 403 {"detail": "不具备该课程的授课资格"}
+[14:47:41] TC-TCH-05 通过 | T008 取消认领 ACC110 后重新认领 | 实际：取消 HTTP 200 {"message": "已取消授课", "offering_id": 20, "teacher_id": null}；重新认领 200
+[14:47:41] TC-TCH-06 通过 | T007 取消他人承担的 ACC110 | 实际：HTTP 403 {"detail": "只能取消自己承担的班次"}
+[14:47:41] TC-SEC-02 通过 | 教师调用学生方案接口 | 实际：HTTP 403 {"detail": "仅学生可访问"}
+[14:47:41] TC-REG-01 通过 | 首次提交只有 3 个主选 | 实际：HTTP 422 {"detail": "首次提交必须恰好包含 4 个主选和 2 个备选"}
+[14:47:41] TC-REG-02 通过 | S013 仅保存草稿 | 实际：保存 200；草稿 6 项；人数变化 False
+[14:47:41] TC-REG-03 通过 | S004 未修先修课 FINAL001 选择 ACC107 | 实际：HTTP 409 {"detail": "先修课程未满足（课程 15: 缺少 [1]）"}；正式结果 []
+[14:47:41] TC-REG-04 通过 | S001–S003 已修 FINAL001，首次提交含 ACC107 的 4+2 方案 | 实际：S001 正式结果 ['ACC101', 'ACC102', 'ACC104', 'ACC107']
+[14:47:42] S001–S009 提交后人数：{'ACC101-01': 9, 'ACC102-01': 9, 'ACC103-01': 6, 'ACC104-01': 4, 'ACC104-02': 0, 'ACC105-01': 0, 'ACC106-01': 0, 'ACC107-01': 3, 'ACC108-01': 0, 'ACC109-01': 5, 'ACC110-01': 0}
+[14:47:42] TC-REG-05 通过 | ACC101 剩 1 个名额时 S010、S011 同时提交 | 实际：S010 HTTP 409 {"detail": "班次 10 已满"}；S011 HTTP 200 {"schedule_id": 15, "version": 3, "message": "选课方案已提交"}；ACC101 人数 10
+[14:47:42] 名额竞争成功者 ['S011']，失败者 ['S010']
+[14:47:42] TC-REG-06 通过 | S010 改选未满班次后重新提交 | 实际：HTTP 200 {"schedule_id": 14, "version": 4, "message": "选课方案已提交"}；正式结果 ['ACC103', 'ACC104', 'ACC105', 'ACC106']
+[14:47:42] TC-REG-07 通过 | S010 后续修改加入已满的 ACC101 | 实际：HTTP 409 {"detail": "班次 10 已满"}；正式结果 ['ACC103', 'ACC104', 'ACC105', 'ACC106']
+[14:47:42] TC-REG-08 通过 | S012 同时选择同一时段的 ACC101 与 ACC108 | 实际：HTTP 409 {"detail": "班次 10 与班次 18 上课时间冲突"}；正式结果 []
+[14:47:42] TC-REG-09 通过 | S012 首次提交含已满的 ACC101 | 实际：HTTP 409 {"detail": "班次 10 已满"}
+[14:47:42] TC-REG-10 通过 | S013 主选同一课程的两个班次 | 实际：HTTP 409 {"detail": "同一课程只能正式选择一个班次"}
+[14:47:42] TC-REG-11 通过 | S014 提交后删除整份方案 | 实际：HTTP 200 {"schedule_id": 17, "version": 4, "message": "选课方案已删除"}；ACC103 10->9；正式结果 []
+[14:47:42] TC-REG-12 通过 | S002 将 ACC104 由 01 班换到 02 班 | 实际：HTTP 200 {"schedule_id": 7, "version": 5, "message": "选课方案已提交"}；正式结果 ['ACC101', 'ACC102', 'ACC104-02', 'ACC107']
+[14:47:42] TC-REG-13 通过 | S003 单独退选 ACC102 | 实际：HTTP 200 {"schedule_id": 8, "version": 4, "message": "退课成功"}；正式结果 ['ACC101', 'ACC104', 'ACC107']；剩余备选 2
+[14:47:42] TC-REG-14 通过 | S005 使用旧页面版本提交 | 实际：HTTP 409 {"detail": "方案已在其他页面更新，请重新载入"}；版本 3
+[14:47:42] TC-SEC-03 通过 | S005 保存草稿缺少 CSRF 令牌 | 实际：HTTP 403 {"detail": "缺少 CSRF 令牌"}
+[14:47:42] TC-TCH-07 通过 | T001 查看 ACC101 花名册 | 实际：人数 10：['20260001', 'S001', 'S002', 'S003', 'S004', 'S005', 'S006', 'S007', 'S008', 'S009']
+[14:47:42] TC-SEC-04 通过 | T002 查看他人班次花名册 | 实际：HTTP 403 {"detail": "只能访问自己承担班次的数据"}
+[14:47:42] TC-SEC-05 通过 | 学生调用教师花名册接口 | 实际：HTTP 403 {"detail": "仅教师可访问"}
+[14:47:42] 服务 catalog 已停止
+[14:47:42] TC-CAT-02 通过 | 目录服务停止时学生查看课程列表 | 实际：目录 HTTP 503 {"detail": "课程目录暂时不可用或数据无效，请稍后重试；已保存的选课结果不会丢失"}；方案 200
+[14:47:42] 服务 catalog 已启动（端口 8951）
+[14:47:42] TC-CAT-03 通过 | 目录服务恢复后重新查询 | 实际：HTTP 200
+[14:47:43] TC-ADM-07 通过 | 停用 S013 后旧会话访问、再启用 | 实际：旧会话 401；停用期间登录 403；启用后登录 200
+[14:47:43] TC-SEC-06 通过 | 学生调用关闭选课 | 实际：HTTP 403 {"detail": "仅教务员可访问"}
+[14:47:43] TC-CLS-01 通过 | 关闭确认口令错误 | 实际：HTTP 422 {"detail": "确认口令不正确"}
+[14:47:43] 服务 billing 已停止
+[14:47:43] TC-CLS-02 通过 | 计费系统停止时教务关闭选课 | 实际：200；取消 ['ACC104-02', 'ACC105', 'ACC106', 'ACC108', 'ACC110']；账单任务 12
+[14:47:43] TC-CLS-03 通过 | 核对关闭后每位学生课表与金额快照 | 实际：不一致 无；不应有账单却有 无；总额 4920.0
+[14:47:43] TC-CLS-04 通过 | S002 换入的 ACC104-02 人数不足被取消后由备选替补 | 实际：S002 正式结果 ['ACC101', 'ACC102', 'ACC107', 'ACC109']
+[14:47:43] TC-CLS-05 通过 | 主动退课的 S003 关闭时不自动补回 | 实际：S003 正式结果 ['ACC101', 'ACC104', 'ACC107']
+[14:47:43] TC-CLS-06 通过 | 关闭后学生修改方案 | 实际：HTTP 409 {"detail": "本学期选课已经关闭"}
+[14:47:43] TC-CLS-07 通过 | 关闭后教师认领班次 | 实际：HTTP 409 {"detail": "本学期选课已经关闭"}
+[14:47:43] TC-CLS-08 通过 | 重复关闭同一学期 | 实际：HTTP 200 {"message": "选课已关闭，账单任务已保存", "cancelled_offering_ids": [14, 15, 16, 18, 20], "billing_jobs_created": 12}
+[14:47:43] TC-BIL-01 通过 | 计费系统不可用时发送账单 | 实际：派发 HTTP 200 {"dispatched": 12, "sent": 0, "failed": 12, "abandoned": 0, "retrying": 12, "results": [{"job_id": 1, "student_id": 4, "status": "failed", "attempts": 1, "retryable": true, "error": "计费服务不可用：[Errno 111] Connection refused"}, {"job_id": 2, "student_id": 1, "status": "failed", "attempts": 1, "retryabl；状态 PARTIAL_FAIL 失败 12
+[14:47:43] 服务 billing 已启动（端口 8952）
+[14:47:45] TC-BIL-02 通过 | 计费系统恢复后重试 | 实际：派发 HTTP 200 {"dispatched": 12, "sent": 12, "failed": 0, "abandoned": 0, "retrying": 0, "results": [{"job_id": 1, "student_id": 4, "status": "sent", "attempts": 2, "retryable": true, "error": null}, {"job_id": 2, "student_id": 1, "status": "sent", "attempts": 2, "retryable": true, "error": null}, {"job_id": 3, "；状态 ALL_SENT；计费端 12 笔 合计 4920.0
+[14:47:45] TC-BIL-03 通过 | 对已发送账单重新排队 | 实际：HTTP 409 {"detail": "账单已发送成功，不能重新排队"}
+[14:47:45] TC-BIL-04 通过 | 向计费端重复发送同一账单及内容不同的账单 | 实际：重复 HTTP 200 {"status": "already_charged", "duplicate": true, "charge": {"semester_i；冲突 409；笔数 12
+[14:47:45] 服务 billing 已停止
+[14:47:45] 服务 billing 已启动（端口 8952）
+[14:47:45] TC-BIL-05 通过 | 计费端重启后再次接收同一账单 | 实际：重启后 12 笔；重复发送 duplicate=True
+[14:47:45] TC-GRD-01 通过 | T001 查看可录成绩的上一已完成学期班次 | 实际：学期 2025-FALL，班次 ['FINAL001']
+[14:47:46] TC-GRD-02 通过 | T001 修改 S001 为 A、清空 S002、S003 记为 I | 实际：HTTP 200 {"offering_id": 9, "updated": 3, "unchanged": 0, "changes": [{"student_id": 1, "student_number": "S001", "previ；变更记录 3 条
+[14:47:46] TC-GRD-03 通过 | S001 查看本人成绩单 | 实际：返回 {"student_id": 1, "student_number": "S001", "semester_id": null, "grades": [{"semester_id": 2, "semester_code": "2025-FALL", "course_id": 1, "course_code": "FIN
+[14:47:46] TC-GRD-04 通过 | T002 修改他人班次成绩 | 实际：HTTP 403 {"detail": "只能录入自己承担班次的学生成绩"}
+[14:47:46] TC-GRD-05 通过 | T001 给不在该班名单的 S004 录成绩 | 实际：HTTP 403 {"detail": "只能为本班次正式选上的学生录入成绩"}
+[14:47:46] TC-GRD-06 通过 | 给已关闭但未结束的 2027-SPRING 班次录成绩 | 实际：HTTP 409 {"detail": "只能录入已完成学期的成绩"}
+[14:47:46] TC-GRD-07 通过 | 录入非法成绩 E | 实际：HTTP 422 {"detail": "成绩 E 不是允许的取值"}
+[14:47:46] TC-SEC-07 通过 | 学生调用成绩录入接口 | 实际：HTTP 403 {"detail": "仅教师可访问"}
+[14:47:46] TC-ADM-08 通过 | 删除有选课历史的 S014 | 实际：HTTP 200 {"action": "deactivated", "message": "人员已停用"}
+[14:47:46] TC-ADM-09 通过 | 重置 S012 密码 | 实际：重置 200；登录 HTTP 200 {"role": "student", "is_first_login": true}
+[14:47:46] TC-AUTH-07 通过 | 退出登录后访问 | 实际：退出 200；访问 401
+[14:47:46] 服务 app 已停止
+[14:47:46] 服务 catalog 已停止
+[14:47:46] 服务 billing 已停止
+[14:47:46] 共 67 条，通过 67，不通过 0

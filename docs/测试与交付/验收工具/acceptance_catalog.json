@@ -1,0 +1,239 @@
+{
+  "semester_code": "2027-SPRING",
+  "starts_on": "2027-02-20",
+  "ends_on": "2027-07-10",
+  "courses": [
+    {
+      "code": "ACC101",
+      "name": "验收-满员与最后名额",
+      "description": "验收-满员与最后名额（成员6验收数据，虚构）",
+      "department": "计算机学院",
+      "fee": "100.00",
+      "prerequisites": [],
+      "sections": [
+        {
+          "section_number": "01",
+          "capacity": 10,
+          "slots": [
+            {
+              "weekday": 1,
+              "start_period": 1,
+              "end_period": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "ACC102",
+      "name": "验收-普通课程B",
+      "description": "验收-普通课程B（成员6验收数据，虚构）",
+      "department": "计算机学院",
+      "fee": "150.00",
+      "prerequisites": [],
+      "sections": [
+        {
+          "section_number": "01",
+          "capacity": 10,
+          "slots": [
+            {
+              "weekday": 2,
+              "start_period": 1,
+              "end_period": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "ACC103",
+      "name": "验收-普通课程C",
+      "description": "验收-普通课程C（成员6验收数据，虚构）",
+      "department": "计算机学院",
+      "fee": "100.00",
+      "prerequisites": [],
+      "sections": [
+        {
+          "section_number": "01",
+          "capacity": 10,
+          "slots": [
+            {
+              "weekday": 3,
+              "start_period": 1,
+              "end_period": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "ACC104",
+      "name": "验收-换班课程",
+      "description": "验收-换班课程（成员6验收数据，虚构）",
+      "department": "计算机学院",
+      "fee": "100.00",
+      "prerequisites": [],
+      "sections": [
+        {
+          "section_number": "01",
+          "capacity": 10,
+          "slots": [
+            {
+              "weekday": 4,
+              "start_period": 1,
+              "end_period": 2
+            }
+          ]
+        },
+        {
+          "section_number": "02",
+          "capacity": 10,
+          "slots": [
+            {
+              "weekday": 5,
+              "start_period": 3,
+              "end_period": 4
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "ACC105",
+      "name": "验收-人数不足",
+      "description": "验收-人数不足（成员6验收数据，虚构）",
+      "department": "计算机学院",
+      "fee": "100.00",
+      "prerequisites": [],
+      "sections": [
+        {
+          "section_number": "01",
+          "capacity": 10,
+          "slots": [
+            {
+              "weekday": 5,
+              "start_period": 1,
+              "end_period": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "ACC106",
+      "name": "验收-无教师",
+      "description": "验收-无教师（成员6验收数据，虚构）",
+      "department": "计算机学院",
+      "fee": "100.00",
+      "prerequisites": [],
+      "sections": [
+        {
+          "section_number": "01",
+          "capacity": 10,
+          "slots": [
+            {
+              "weekday": 1,
+              "start_period": 3,
+              "end_period": 4
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "ACC107",
+      "name": "验收-先修课",
+      "description": "验收-先修课（成员6验收数据，虚构）",
+      "department": "计算机学院",
+      "fee": "100.00",
+      "prerequisites": [
+        "FINAL001"
+      ],
+      "sections": [
+        {
+          "section_number": "01",
+          "capacity": 10,
+          "slots": [
+            {
+              "weekday": 2,
+              "start_period": 3,
+              "end_period": 4
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "ACC108",
+      "name": "验收-时间冲突",
+      "description": "验收-时间冲突（成员6验收数据，虚构）",
+      "department": "计算机学院",
+      "fee": "100.00",
+      "prerequisites": [],
+      "sections": [
+        {
+          "section_number": "01",
+          "capacity": 10,
+          "slots": [
+            {
+              "weekday": 1,
+              "start_period": 1,
+              "end_period": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "ACC109",
+      "name": "验收-备选承接",
+      "description": "验收-备选承接（成员6验收数据，虚构）",
+      "department": "计算机学院",
+      "fee": "80.00",
+      "prerequisites": [],
+      "sections": [
+        {
+          "section_number": "01",
+          "capacity": 10,
+          "slots": [
+            {
+              "weekday": 3,
+              "start_period": 3,
+              "end_period": 4
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "ACC110",
+      "name": "验收-备选二",
+      "description": "验收-备选二（成员6验收数据，虚构）",
+      "department": "计算机学院",
+      "fee": "100.00",
+      "prerequisites": [],
+      "sections": [
+        {
+          "section_number": "01",
+          "capacity": 10,
+          "slots": [
+            {
+              "weekday": 4,
+              "start_period": 3,
+              "end_period": 4
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "FINAL001",
+      "name": "软件工程基础",
+      "description": "软件工程基础（成员6验收数据，虚构）",
+      "department": "计算机学院",
+      "fee": "100.00",
+      "prerequisites": [],
+      "sections": []
+    }
+  ]
+}

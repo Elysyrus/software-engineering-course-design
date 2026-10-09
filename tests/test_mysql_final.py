@@ -1,4 +1,4 @@
-"""真实 MySQL：关闭忙碌、人员编号竞争、同一教师冲突认领。"""
+"""真实 MySQL：关闭忙碌、人员编号竞争、同一教师冲突认领、时间精度。"""
 
 import os
 import threading
@@ -18,6 +18,8 @@ from app.models import (
     TeacherQualification,
 )
 from app.errors import BusinessError
+from app.models import BillingJob, Student
+from app.services.billing import dispatch_pending_jobs
 from app.services.registration import close_registration, lock_semester
 from app.services.teaching import claim_offering
 from app.services.personnel import create_student
@@ -129,3 +131,33 @@ def test_same_teacher_cannot_concurrently_claim_conflicting_classes(mysql_engine
 
     result = run_workers(claim, ids)
     assert result.count("success") == 1 and sum("冲突" in x for x in result) == 1
+
+
+def test_billing_job_due_immediately_keeps_fractional_seconds(mysql_engine):
+    """成员 6 BUG-01：MySQL DATETIME 四舍五入会把 .7 秒进位到下一秒，刚创建的账单不能被立即派发。"""
+    from datetime import UTC, datetime
+
+    moment = datetime(2027, 1, 20, 8, 0, 0, 700000, tzinfo=UTC)
+    with Session(mysql_engine, expire_on_commit=False) as db:
+        term = Semester(code="FSP", starts_on=date(2026, 9, 1), ends_on=date(2027, 1, 1))
+        student = Student(student_number="FSP-S", name="时间精度")
+        db.add_all([term, student])
+        db.flush()
+        db.add(
+            BillingJob(
+                semester_id=term.id,
+                student_id=student.id,
+                amount=Decimal("100.00"),
+                schedule_snapshot="[]",
+                next_attempt_at=moment,
+            )
+        )
+        db.commit()
+
+    sent = []
+    with Session(mysql_engine) as db:
+        stored = db.scalar(select(BillingJob.next_attempt_at))
+        result = dispatch_pending_jobs(db, sender=sent.append, now=moment)
+
+    assert stored.microsecond == 700000
+    assert result["dispatched"] == 1 and len(sent) == 1
